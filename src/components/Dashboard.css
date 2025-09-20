@@ -1,0 +1,292 @@
+.dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* User Header */
+.user-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 2rem;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+}
+
+.user-info h1 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.user-info p {
+  margin: 0;
+  color: #7f8c8d;
+  font-size: 1rem;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+}
+
+.avatar-circle {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: bold;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+/* Financial Cards */
+.financial-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.card {
+  background: white;
+  padding: 2rem;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.card-icon {
+  font-size: 3rem;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  flex-shrink: 0;
+}
+
+.sales-card .card-icon {
+  background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+}
+
+.expenses-card .card-icon {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ffa8a8 100%);
+}
+
+.profit-card .card-icon {
+  background: linear-gradient(135deg, #4ecdc4 0%, #96f7d2 100%);
+}
+
+.card-content h3 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.card-content .amount {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.trend {
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+}
+
+.trend.positive {
+  color: #27ae60;
+  background-color: #d5f4e6;
+}
+
+.trend.negative {
+  color: #e74c3c;
+  background-color: #fadbd8;
+}
+
+/* Chat Section */
+.chat-section {
+  background: white;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  padding: 2rem;
+}
+
+.chat-container h3 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.chat-container p {
+  margin: 0 0 2rem 0;
+  color: #7f8c8d;
+  font-size: 1rem;
+}
+
+.chat-form {
+  margin-bottom: 2rem;
+}
+
+.chat-input-group {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 1rem 1.5rem;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.chat-submit {
+  padding: 0.85rem 1.1rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  min-width: 60px;
+}
+
+.chat-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+}
+
+.chat-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Arrow icon specific + hover to black */
+.arrow-icon {
+  display: block;
+}
+
+.chat-submit:hover:not(:disabled) .arrow-icon {
+  color: #000000;
+}
+
+/* Profit amount conditional color */
+.profit-amount.positive {
+  color: #27ae60;
+}
+
+.profit-amount.negative {
+  color: #e74c3c;
+}
+
+/* LLM Response */
+.llm-response {
+  background: #f8f9fa;
+  border-radius: 10px;
+  padding: 1.5rem;
+  border-left: 4px solid #667eea;
+}
+
+.llm-response h4 {
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.response-content {
+  color: #495057;
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+/* Loading Indicator */
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 10px;
+  margin-top: 1rem;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e9ecef;
+  border-top: 3px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-indicator p {
+  margin: 0;
+  color: #7f8c8d;
+  font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .user-header {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .financial-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+
+  .chat-input-group {
+    flex-direction: column;
+  }
+
+  .chat-input {
+    width: 100%;
+  }
+}
+
