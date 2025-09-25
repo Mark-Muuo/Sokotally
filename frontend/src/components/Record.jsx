@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './Record.css';
+import { loadTransactions, saveTransactions } from '../storage/transactions';
 
 const Record = () => {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -8,14 +9,21 @@ const Record = () => {
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [selectedCategory, setSelectedCategory] = useState('all'); // all | sale | expense | debt | loan
 
-  const [transactions, setTransactions] = useState([
-    // Seed examples for today
-    { id: 'S-001', date: todayIso, category: 'sale', item: 'Maize Flour', quantity: 10, amount: 1500 },
-    { id: 'S-002', date: todayIso, category: 'sale', item: 'Sugar 1kg', quantity: 6, amount: 900 },
-    { id: 'E-001', date: todayIso, category: 'expense', expenseType: 'Transport', item: 'Delivery Van Fuel', quantity: 1, amount: 2500 },
-    { id: 'D-001', date: todayIso, category: 'debt', customerName: 'Jane Doe', item: 'Cooking Oil 2L', amount: 600, status: 'unpaid' },
-    { id: 'L-001', date: todayIso, category: 'loan', lender: 'Chama Group', amount: 5000, status: 'unpaid' }
-  ]);
+  const [transactions, setTransactions] = useState(() => {
+    const seed = [
+      { id: 'S-001', date: todayIso, category: 'sale', item: 'Maize Flour', quantity: 10, amount: 1500 },
+      { id: 'S-002', date: todayIso, category: 'sale', item: 'Sugar 1kg', quantity: 6, amount: 900 },
+      { id: 'E-001', date: todayIso, category: 'expense', expenseType: 'Transport', item: 'Delivery Van Fuel', quantity: 1, amount: 2500 },
+      { id: 'D-001', date: todayIso, category: 'debt', customerName: 'Jane Doe', item: 'Cooking Oil 2L', amount: 600, status: 'unpaid' },
+      { id: 'L-001', date: todayIso, category: 'loan', lender: 'Chama Group', amount: 5000, status: 'unpaid' }
+    ];
+    const loaded = loadTransactions();
+    return loaded && loaded.length ? loaded : seed;
+  });
+
+  useEffect(() => {
+    saveTransactions(transactions);
+  }, [transactions]);
 
   const kes = useMemo(() => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }), []);
 
