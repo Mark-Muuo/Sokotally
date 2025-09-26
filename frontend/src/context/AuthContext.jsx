@@ -1,44 +1,35 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { getCurrentUser, loginUser, logoutUser, registerUser } from '../storage/auth';
+import React, { createContext, useContext, useMemo, useState } from 'react';
+import { apiLogin, apiRegister, saveToken, clearToken } from '../storage/auth';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-	const [user, setUser] = useState(() => getCurrentUser());
+	const [user, setUser] = useState(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 
-	useEffect(() => {
-		setUser(getCurrentUser());
-	}, []);
-
 	const value = useMemo(() => ({
-		user,
-		loading,
-		error,
+		user, loading, error,
 		signUp: async ({ name, email, password }) => {
 			setLoading(true); setError('');
 			try {
-				const u = registerUser({ name, email, password });
-				setUser(u);
-				return u;
-			} catch (e) {
-				setError(e.message || 'Registration failed');
-				throw e;
-			} finally { setLoading(false); }
+				await apiRegister({ name, email, password });
+				// Do not auto-login on signup; user should sign in explicitly
+				return true;
+			} catch (e) { setError(e.message || 'Registration failed'); throw e; }
+			finally { setLoading(false); }
 		},
 		signIn: async ({ email, password }) => {
 			setLoading(true); setError('');
 			try {
-				const u = loginUser({ email, password });
-				setUser(u);
-				return u;
-			} catch (e) {
-				setError(e.message || 'Login failed');
-				throw e;
-			} finally { setLoading(false); }
+				const { token, user } = await apiLogin({ email, password });
+				saveToken(token);
+				setUser(user);
+				return user;
+			} catch (e) { setError(e.message || 'Login failed'); throw e; }
+			finally { setLoading(false); }
 		},
-		signOut: () => { logoutUser(); setUser(null); }
+		signOut: () => { clearToken(); setUser(null); }
 	}), [user, loading, error]);
 
 	return (
@@ -49,5 +40,4 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
-
 
