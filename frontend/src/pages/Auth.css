@@ -8,11 +8,6 @@
 .btn.primary { background: #6c7a92; }
 .error { background: #fdecea; color: #e74c3c; padding: 0.6rem 0.8rem; border-radius: 6px; }
 
-/* Top-left back to home link */
-.auth-topbar { position: fixed; top: 16px; left: 16px; z-index: 1000; }
-.auth-home-link { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: #2c3e50; font-weight: 700; background: #ffffff; border: 1px solid #e7e9ef; padding: 0.5rem 0.75rem; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
-.auth-home-link:hover { background: #f7f8fa; }
-
 @media (min-width: 480px) {
 	.auth-card { padding: 1.75rem; }
 }
