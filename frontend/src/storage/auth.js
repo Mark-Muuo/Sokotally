@@ -1,3 +1,35 @@
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+
+export async function apiRegister({ name, email, password }) {
+	const res = await fetch(`${API_BASE}/auth/register`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ name, email, password })
+	});
+	if (!res.ok) throw new Error((await res.json()).error || 'Registration failed');
+	return res.json();
+}
+
+export async function apiLogin({ email, password }) {
+	const res = await fetch(`${API_BASE}/auth/login`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ email, password })
+	});
+	if (!res.ok) throw new Error((await res.json()).error || 'Login failed');
+	return res.json();
+}
+
+export function saveToken(token) {
+	localStorage.setItem('sokotally_token', token);
+}
+export function getToken() {
+	return localStorage.getItem('sokotally_token');
+}
+export function clearToken() {
+	localStorage.removeItem('sokotally_token');
+}
+
 const USERS_KEY = 'sokotally_users_v1';
 const SESSION_KEY = 'sokotally_session_v1';
 
