@@ -1,9 +1,75 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './Report.css';
 
 const Report = () => {
   const [filterType, setFilterType] = useState('monthly');
   const [customerRange, setCustomerRange] = useState('all');
+
+  // Language support
+  const [lang, setLang] = useState(() => localStorage.getItem('sokotally_lang') || 'en');
+  useEffect(() => {
+    const handler = () => setLang(localStorage.getItem('sokotally_lang') || 'en');
+    window.addEventListener('langChange', handler);
+    return () => window.removeEventListener('langChange', handler);
+  }, []);
+  const t = useMemo(() => ({
+    en: {
+      title: 'Financial Reports',
+      subtitle: 'Comprehensive financial analysis and business insights',
+      reportPeriod: 'Report Period:',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      customerRange: 'Customer Range:',
+      allCustomers: 'All Customers',
+      top10: 'Top 10 Customers',
+      top20: 'Top 20 Customers',
+      exportReport: 'Export Report',
+      profitLoss: 'Profit & Loss Statement',
+      totalSales: 'Total Sales',
+      totalExpenses: 'Total Expenses',
+      netProfitLoss: 'Net Profit/Loss',
+      debtLoans: 'Debt & Loans Management',
+      peopleOwed: 'People Owed',
+      loanInstitutions: 'Loan Institutions',
+      expenseAnalysis: 'Expense Analysis',
+      stockSales: 'Stock Sales Report',
+      aiInsights: 'AI Business Insights',
+      profitable: 'Your business is profitable with a positive net income.',
+      loss: 'Your business is currently operating at a loss. Consider reducing expenses or increasing sales.',
+      debtCollection: 'You have more outstanding debts than paid ones. Consider implementing a debt collection strategy.',
+      debtGood: 'Your debt collection is going well.',
+      monitorProducts: 'Monitor your top-performing products and consider increasing inventory'
+    },
+    sw: {
+      title: 'Ripoti za Kifedha',
+      subtitle: 'Uchambuzi wa kifedha na ufahamu wa biashara',
+      reportPeriod: 'Kipindi cha Ripoti:',
+      daily: 'Kila Siku',
+      weekly: 'Kila Wiki',
+      monthly: 'Kila Mwezi',
+      customerRange: 'Aina ya Wateja:',
+      allCustomers: 'Wateja Wote',
+      top10: 'Wateja 10 Bora',
+      top20: 'Wateja 20 Bora',
+      exportReport: 'Hamisha Ripoti',
+      profitLoss: 'Taarifa ya Faida na Hasara',
+      totalSales: 'Mauzo ya Jumla',
+      totalExpenses: 'Gharama za Jumla',
+      netProfitLoss: 'Faida/Hasara ya Wavu',
+      debtLoans: 'Usimamizi wa Deni na Mikopo',
+      peopleOwed: 'Watu Wanaodaiwa',
+      loanInstitutions: 'Mashirika ya Mikopo',
+      expenseAnalysis: 'Uchambuzi wa Gharama',
+      stockSales: 'Ripoti ya Uuzaji wa Bidhaa',
+      aiInsights: 'Ufahamu wa AI wa Biashara',
+      profitable: 'Biashara yako ina faida na mapato chanya.',
+      loss: 'Biashara yako sasa ina hasara. Fikiria kupunguza gharama au kuongeza mauzo.',
+      debtCollection: 'Una deni zaidi za kukamilika kuliko zilizolipwa. Fikiria mbinu ya kukusanya deni.',
+      debtGood: 'Ukusanyaji wa deni unaenda vizuri.',
+      monitorProducts: 'Fuatilia bidhaa zako bora na fikiria kuongeza hesabu'
+    }
+  })[lang], [lang]);
 
   // Mock data
   const [reportData, setReportData] = useState({
@@ -127,39 +193,39 @@ const Report = () => {
   return (
     <div className="report-page">
       <div className="page-header">
-        <h1>📊 Financial Reports</h1>
-        <p>Comprehensive financial analysis and business insights</p>
+        <h1>📊 {t.title}</h1>
+        <p>{t.subtitle}</p>
         
         {/* Filter Controls */}
         <div className="filter-controls">
           <div className="filter-group">
-            <label>Report Period:</label>
+            <label>{t.reportPeriod}</label>
             <select 
               value={filterType} 
               onChange={(e) => setFilterType(e.target.value)}
               className="filter-select"
             >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
+              <option value="daily">{t.daily}</option>
+              <option value="weekly">{t.weekly}</option>
+              <option value="monthly">{t.monthly}</option>
             </select>
           </div>
           
           <div className="filter-group">
-            <label>Customer Range:</label>
+            <label>{t.customerRange}</label>
             <select 
               value={customerRange} 
               onChange={(e) => setCustomerRange(e.target.value)}
               className="filter-select"
             >
-              <option value="all">All Customers</option>
-              <option value="top10">Top 10 Customers</option>
-              <option value="top20">Top 20 Customers</option>
+              <option value="all">{t.allCustomers}</option>
+              <option value="top10">{t.top10}</option>
+              <option value="top20">{t.top20}</option>
             </select>
           </div>
           
           <button onClick={handleExportPDF} className="export-btn">
-            📄 Export Report
+            📄 {t.exportReport}
           </button>
         </div>
       </div>
@@ -167,18 +233,18 @@ const Report = () => {
       <div className="report-content">
         {/* Profit & Loss Section */}
         <section className="report-section">
-          <h2>💰 Profit & Loss Statement</h2>
+          <h2>💰 {t.profitLoss}</h2>
           <div className="pl-summary">
             <div className="pl-card sales">
-              <h3>Total Sales</h3>
+              <h3>{t.totalSales}</h3>
               <div className="amount">KSh {totalSales.toLocaleString()}</div>
             </div>
             <div className="pl-card expenses">
-              <h3>Total Expenses</h3>
+              <h3>{t.totalExpenses}</h3>
               <div className="amount">KSh {totalExpenses.toLocaleString()}</div>
             </div>
             <div className={`pl-card net ${netProfit >= 0 ? 'profit' : 'loss'}`}>
-              <h3>Net Profit/Loss</h3>
+              <h3>{t.netProfitLoss}</h3>
               <div className="amount">KSh {netProfit.toLocaleString()}</div>
             </div>
           </div>
@@ -186,12 +252,12 @@ const Report = () => {
 
         {/* Debt & Loans Section */}
         <section className="report-section">
-          <h2>💳 Debt & Loans Management</h2>
+          <h2>💳 {t.debtLoans}</h2>
           
           <div className="debt-summary">
             <div className="debt-cards">
               <div className="debt-card">
-                <h3>People Owed</h3>
+                <h3>{t.peopleOwed}</h3>
                 <div className="debt-list">
                   {reportData.debts.map((debt, index) => (
                     <div key={index} className="debt-item">
@@ -204,7 +270,7 @@ const Report = () => {
               </div>
               
               <div className="debt-card">
-                <h3>Loan Institutions</h3>
+                <h3>{t.loanInstitutions}</h3>
                 <div className="loan-list">
                   {reportData.loans.map((loan, index) => (
                     <div key={index} className="loan-item">
@@ -221,7 +287,7 @@ const Report = () => {
 
         {/* Expenses Section */}
         <section className="report-section">
-          <h2>💸 Expense Analysis</h2>
+          <h2>💸 {t.expenseAnalysis}</h2>
           
           <div className="expense-breakdown">
             <div className="expense-list">
@@ -240,7 +306,7 @@ const Report = () => {
 
         {/* Stock Report Section */}
         <section className="report-section">
-          <h2>📦 Stock Sales Report</h2>
+          <h2>📦 {t.stockSales}</h2>
           
           <div className="stock-overview">
             <div className="stock-list">
@@ -257,16 +323,16 @@ const Report = () => {
 
         {/* AI Summary Section */}
         <section className="report-section ai-summary">
-          <h2>🤖 AI Business Insights</h2>
+          <h2>🤖 {t.aiInsights}</h2>
           <div className="ai-insights">
             <div className="insight-item">
-              {netProfit > 0 ? "✅ Your business is profitable with a positive net income." : "⚠️ Your business is currently operating at a loss. Consider reducing expenses or increasing sales."}
+              {netProfit > 0 ? `✅ ${t.profitable}` : `⚠️ ${t.loss}`}
             </div>
             <div className="insight-item">
-              {unpaidDebts > paidDebts ? "📊 You have more outstanding debts than paid ones. Consider implementing a debt collection strategy." : "✅ Your debt collection is going well."}
+              {unpaidDebts > paidDebts ? `📊 ${t.debtCollection}` : `✅ ${t.debtGood}`}
             </div>
             <div className="insight-item">
-              💡 Monitor your top-performing products and consider increasing inventory
+              💡 {t.monitorProducts}
             </div>
           </div>
         </section>
