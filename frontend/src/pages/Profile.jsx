@@ -170,6 +170,8 @@ const Profile = () => {
                         <div className="avatar-circle">
                             {avatarPreview ? (
                                 <img src={avatarPreview} alt="avatar" />
+                            ) : user.avatar ? (
+                                <img src={`${API_BASE}${user.avatar}`} alt="avatar" />
                             ) : (
                                 (user.name || '').split(' ').map(n => n[0]).join('')
                             )}

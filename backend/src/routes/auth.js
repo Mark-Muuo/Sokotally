@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { upload } from '../middleware/upload.js';
 
 export const authRouter = Router();
 
@@ -26,7 +27,7 @@ authRouter.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ name, phone: normalizedPhone, passwordHash });
     const token = sign(user);
-  return res.status(201).json({ token, user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '' } });
+  return res.status(201).json({ token, user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '', avatar: user.avatar || '' } });
   } catch (e) {
     return res.status(500).json({ error: 'Server error' });
   }
@@ -45,7 +46,7 @@ authRouter.post('/login', async (req, res) => {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
     const token = sign(user);
-  return res.json({ token, user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '' } });
+  return res.json({ token, user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '', avatar: user.avatar || '' } });
   } catch {
     return res.status(500).json({ error: 'Server error' });
   }
@@ -76,7 +77,7 @@ authRouter.get('/me', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json({ user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '' } });
+    return res.json({ user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '', avatar: user.avatar || '' } });
   } catch {
     return res.status(500).json({ error: 'Server error' });
   }
@@ -100,7 +101,7 @@ authRouter.put('/profile', authMiddleware, async (req, res) => {
     if (Object.keys(update).length === 0) return res.status(400).json({ error: 'No fields to update' });
     const user = await User.findByIdAndUpdate(req.userId, update, { new: true });
     if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json({ user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '' } });
+    return res.json({ user: { id: user.id, name: user.name, phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '', town: user.town || '', gender: user.gender || '', ageRange: user.ageRange || '', avatar: user.avatar || '' } });
   } catch {
     return res.status(500).json({ error: 'Server error' });
   }
@@ -115,5 +116,31 @@ authRouter.post('/refresh', authMiddleware, async (req, res) => {
     return res.json({ token });
   } catch {
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Avatar upload endpoint
+authRouter.post('/profile/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update user's avatar field with the filename
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+    await User.findByIdAndUpdate(req.userId, { avatar: avatarPath });
+
+    return res.json({ 
+      message: 'Avatar uploaded successfully',
+      avatar: avatarPath 
+    });
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    return res.status(500).json({ error: 'Failed to upload avatar' });
   }
 });

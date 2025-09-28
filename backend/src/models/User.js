@@ -8,7 +8,8 @@ const userSchema = new mongoose.Schema({
   lastName: { type: String, trim: true },
   town: { type: String, trim: true },
   gender: { type: String, enum: ['Male', 'Female', 'Other', ''], default: '' },
-  ageRange: { type: String, enum: ['<18', '18-25', '26-35', '36-50', '50+',''], default: '' }
+  ageRange: { type: String, enum: ['<18', '18-25', '26-35', '36-50', '50+',''], default: '' },
+  avatar: { type: String, default: '' }
 }, { timestamps: true });
 
 export const User = mongoose.model('User', userSchema);
