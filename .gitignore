@@ -28,3 +28,5 @@ dist-ssr
 .env.*
 backend/.env
 frontend/.env
+
+GOOGLE_TRANSLATE_SETUP.md

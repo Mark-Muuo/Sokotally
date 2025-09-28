@@ -5,18 +5,33 @@ import { useAuth } from '../context/AuthContext';
 const SignUp = () => {
 	const { signUp, loading, error } = useAuth();
 	const navigate = useNavigate();
-	const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+	const [form, setForm] = useState({ name: '', phone: '', password: '', confirm: '' });
 	const [showPassword, setShowPassword] = useState(false);
 	const [showConfirm, setShowConfirm] = useState(false);
+
+	// Always use English for pre-login pages
+	const t = {
+		title: 'Create Account',
+		subtitle: 'Sign up to start managing your kiosk records',
+		name: 'Full Name',
+		phone: 'Phone Number',
+		password: 'Password',
+		confirm: 'Confirm Password',
+		signUp: 'Sign Up',
+		haveAccount: 'Already have an account?',
+		signIn: 'Sign In',
+		allFieldsRequired: 'All fields are required',
+		passwordsMatch: 'Passwords do not match'
+	};
 
 	const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
 	const onSubmit = async (e) => {
 		e.preventDefault();
-		if (!form.name || !form.email || !form.password) return alert('All fields are required');
-		if (form.password !== form.confirm) return alert('Passwords do not match');
+		if (!form.name || !form.phone || !form.password) return alert(t.allFieldsRequired);
+		if (form.password !== form.confirm) return alert(t.passwordsMatch);
 		try {
-			await signUp({ name: form.name, email: form.email, password: form.password });
+			await signUp({ name: form.name, phone: form.phone, password: form.password });
 			navigate('/signin');
 		} catch {}
 	};
@@ -32,11 +47,12 @@ const SignUp = () => {
 				</Link>
 			</div>
 			<form className="auth-card" onSubmit={onSubmit}>
-				<h2>Create Account</h2>
+				<h2>{t.title}</h2>
+				<p style={{ margin: '0 0 1.5rem 0', color: '#6b7280', fontSize: '0.9rem' }}>{t.subtitle}</p>
 				{error && <div className="error">{error}</div>}
-				<label>Name<input name="name" value={form.name} onChange={onChange} /></label>
-				<label>Email<input type="email" name="email" value={form.email} onChange={onChange} /></label>
-				<label>Password
+				<label>{t.name}<input name="name" value={form.name} onChange={onChange} /></label>
+				<label>{t.phone}<input type="tel" name="phone" value={form.phone} onChange={onChange} placeholder="0712345678 or +254712345678" /></label>
+				<label>{t.password}
 					<div style={{ display:'flex', alignItems:'center', gap:8 }}>
 						<input type={showPassword ? 'text' : 'password'} name="password" value={form.password} onChange={onChange} />
 						<button type="button" className="btn" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'} style={{ padding: '0.3rem 0.5rem' }}>
@@ -56,7 +72,7 @@ const SignUp = () => {
 						</button>
 					</div>
 				</label>
-				<label>Confirm Password
+				<label>{t.confirm}
 					<div style={{ display:'flex', alignItems:'center', gap:8 }}>
 						<input type={showConfirm ? 'text' : 'password'} name="confirm" value={form.confirm} onChange={onChange} />
 						<button type="button" className="btn" onClick={() => setShowConfirm(v => !v)} aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'} title={showConfirm ? 'Hide confirm password' : 'Show confirm password'} style={{ padding: '0.3rem 0.5rem' }}>
@@ -76,8 +92,8 @@ const SignUp = () => {
 						</button>
 					</div>
 				</label>
-				<button className="btn primary" disabled={loading} type="submit">Sign Up</button>
-				<p>Already have an account? <Link to="/signin">Sign In</Link></p>
+				<button className="btn primary" disabled={loading} type="submit">{t.signUp}</button>
+				<p>{t.haveAccount} <Link to="/signin">{t.signIn}</Link></p>
 			</form>
 		</div>
 	);

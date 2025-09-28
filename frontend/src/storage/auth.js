@@ -1,20 +1,20 @@
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
-export async function apiRegister({ name, email, password }) {
+export async function apiRegister({ name, phone, password }) {
 	const res = await fetch(`${API_BASE}/auth/register`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name, email, password })
+		body: JSON.stringify({ name, phone, password })
 	});
 	if (!res.ok) throw new Error((await res.json()).error || 'Registration failed');
 	return res.json();
 }
 
-export async function apiLogin({ email, password }) {
+export async function apiLogin({ phone, password }) {
 	const res = await fetch(`${API_BASE}/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ email, password })
+		body: JSON.stringify({ phone, password })
 	});
 	if (!res.ok) throw new Error((await res.json()).error || 'Login failed');
 	return res.json();
@@ -23,11 +23,35 @@ export async function apiLogin({ email, password }) {
 export function saveToken(token) {
 	localStorage.setItem('sokotally_token', token);
 }
+
 export function getToken() {
 	return localStorage.getItem('sokotally_token');
 }
+
 export function clearToken() {
 	localStorage.removeItem('sokotally_token');
+}
+
+// Check if token is expired
+export function isTokenExpired(token) {
+	if (!token) return true;
+	try {
+		const payload = JSON.parse(atob(token.split('.')[1]));
+		const currentTime = Date.now() / 1000;
+		return payload.exp < currentTime;
+	} catch {
+		return true;
+	}
+}
+
+// Get token with expiration check
+export function getValidToken() {
+	const token = getToken();
+	if (!token || isTokenExpired(token)) {
+		clearToken();
+		return null;
+	}
+	return token;
 }
 
 const USERS_KEY = 'sokotally_users_v1';
@@ -66,13 +90,167 @@ export function loginUser({ email, password }) {
 	return user;
 }
 
-export function resetPassword({ email, newPassword }) {
-	const users = loadUsers();
-	const idx = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-	if (idx === -1) throw new Error('No account found for this email');
-	users[idx] = { ...users[idx], password: newPassword };
-	saveUsers(users);
-	return true;
+export async function resetPassword({ phone, newPassword }) {
+	const res = await fetch(`${API_BASE}/auth/reset-password`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ phone, newPassword })
+	});
+	if (!res.ok) throw new Error((await res.json()).error || 'Password reset failed');
+	return res.json();
+}
+
+export async function sendOTP({ phone }) {
+	const res = await fetch(`${API_BASE}/auth/send-otp`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ phone })
+	});
+	const contentType = res.headers.get('content-type') || '';
+	if (!res.ok) {
+		let message = 'Failed to send OTP';
+		try {
+			if (contentType.includes('application/json')) {
+				const data = await res.json();
+				message = data.error || message;
+			} else {
+				// Read text (likely HTML) to avoid JSON parse crash
+				await res.text();
+				message = `${message}. Server responded with ${res.status}`;
+			}
+		} catch {}
+		throw new Error(message);
+	}
+	if (contentType.includes('application/json')) return res.json();
+	// Fallback if server responds without JSON
+	return { ok: true };
+}
+
+export async function verifyOTPLogin({ phone, otp }) {
+	const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ phone, otp })
+	});
+	const contentType = res.headers.get('content-type') || '';
+	if (!res.ok) {
+		let message = 'OTP verification failed';
+		try {
+			if (contentType.includes('application/json')) {
+				const data = await res.json();
+				message = data.error || message;
+			} else {
+				await res.text();
+				message = `${message}. Server responded with ${res.status}`;
+			}
+		} catch {}
+		throw new Error(message);
+	}
+	if (!contentType.includes('application/json')) {
+		throw new Error('Unexpected server response. Ensure OTP API returns JSON.');
+	}
+	return res.json();
+}
+
+export async function getProfile() {
+	const token = getValidToken();
+	if (!token) {
+		clearToken();
+		throw new Error('No valid token available');
+	}
+	
+	const res = await fetch(`${API_BASE}/auth/me`, {
+		method: 'GET',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	const contentType = res.headers.get('content-type') || '';
+	if (!res.ok) {
+		let message = 'Failed to load profile';
+		try {
+			if (contentType.includes('application/json')) {
+				const data = await res.json();
+				message = data.error || message;
+				// Handle token expiration
+				if (data.code === 'TOKEN_EXPIRED') {
+					clearToken();
+					throw new Error('Session expired. Please sign in again.');
+				}
+			} else {
+				await res.text();
+				message = `${message}. Server responded with ${res.status}`;
+			}
+		} catch (e) {
+			if (e.message.includes('Session expired')) throw e;
+		}
+		throw new Error(message);
+	}
+	if (!contentType.includes('application/json')) throw new Error('Unexpected profile response');
+	return res.json();
+}
+
+export async function updateProfile(payload) {
+	const token = getValidToken();
+	if (!token) {
+		clearToken();
+		throw new Error('No valid token available');
+	}
+	
+	const res = await fetch(`${API_BASE}/auth/profile`, {
+		method: 'PUT',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify(payload)
+	});
+	const contentType = res.headers.get('content-type') || '';
+	if (!res.ok) {
+		let message = 'Failed to update profile';
+		try {
+			if (contentType.includes('application/json')) {
+				const data = await res.json();
+				message = data.error || message;
+				// Handle token expiration
+				if (data.code === 'TOKEN_EXPIRED') {
+					clearToken();
+					throw new Error('Session expired. Please sign in again.');
+				}
+			} else {
+				await res.text();
+				message = `${message}. Server responded with ${res.status}`;
+			}
+		} catch (e) {
+			if (e.message.includes('Session expired')) throw e;
+		}
+		throw new Error(message);
+	}
+	if (!contentType.includes('application/json')) throw new Error('Unexpected update response');
+	return res.json();
+}
+
+// Refresh token function
+export async function refreshToken() {
+	const token = getToken();
+	if (!token) {
+		throw new Error('No token to refresh');
+	}
+	
+	const res = await fetch(`${API_BASE}/auth/refresh`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		}
+	});
+	
+	if (!res.ok) {
+		clearToken();
+		throw new Error('Token refresh failed');
+	}
+	
+	const data = await res.json();
+	saveToken(data.token);
+	return data.token;
 }
 
 export function getCurrentUser() {
