@@ -9,6 +9,78 @@ const Record = () => {
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [selectedCategory, setSelectedCategory] = useState('all'); // all | sale | expense | debt | loan
 
+  // Language support
+  const [lang, setLang] = useState(() => localStorage.getItem('sokotally_lang') || 'en');
+  useEffect(() => {
+    const handler = () => setLang(localStorage.getItem('sokotally_lang') || 'en');
+    window.addEventListener('langChange', handler);
+    return () => window.removeEventListener('langChange', handler);
+  }, []);
+  const t = useMemo(() => ({
+    en: {
+      title: 'Record Transactions',
+      subtitle: 'Search, filter and manage daily records',
+      searchPlaceholder: 'Search items, customer, lender, ID...',
+      date: 'Date',
+      category: 'Category',
+      all: 'All',
+      sales: 'Sales',
+      expenses: 'Expenses',
+      debt: 'Debt',
+      loans: 'Loans',
+      item: 'Item',
+      quantity: 'Quantity',
+      amount: 'Amount (KSH)',
+      expenseType: 'Expense Type',
+      customerName: 'Customer Name',
+      status: 'Status',
+      lender: 'Lender',
+      actions: 'Actions',
+      add: 'Add',
+      edit: 'Edit',
+      delete: 'Delete',
+      total: 'Total',
+      noRecords: 'No records',
+      addNew: 'Add new',
+      saveChanges: 'Save changes?',
+      deleteRecord: 'Delete this record?',
+      cancel: 'Cancel',
+      save: 'Save',
+      select: 'Select'
+    },
+    sw: {
+      title: 'Rekodi Muamala',
+      subtitle: 'Tafuta, chuja na simamia rekodi za kila siku',
+      searchPlaceholder: 'Tafuta bidhaa, mteja, mkopeshaji, ID...',
+      date: 'Tarehe',
+      category: 'Kategoria',
+      all: 'Zote',
+      sales: 'Mauzo',
+      expenses: 'Gharama',
+      debt: 'Deni',
+      loans: 'Mikopo',
+      item: 'Bidhaa',
+      quantity: 'Kiasi',
+      amount: 'Kiasi (KSH)',
+      expenseType: 'Aina ya Gharama',
+      customerName: 'Jina la Mteja',
+      status: 'Hali',
+      lender: 'Mkopeshaji',
+      actions: 'Vitendo',
+      add: 'Ongeza',
+      edit: 'Hariri',
+      delete: 'Futa',
+      total: 'Jumla',
+      noRecords: 'Hakuna rekodi',
+      addNew: 'Ongeza mpya',
+      saveChanges: 'Hifadhi mabadiliko?',
+      deleteRecord: 'Futa rekodi hii?',
+      cancel: 'Ghairi',
+      save: 'Hifadhi',
+      select: 'Chagua'
+    }
+  })[lang], [lang]);
+
   const [transactions, setTransactions] = useState(() => {
     const seed = [
       { id: 'S-001', date: todayIso, category: 'sale', item: 'Maize Flour', quantity: 10, amount: 1500 },
@@ -69,8 +141,8 @@ const Record = () => {
   return (
     <div className="record-page">
       <header className="page-header">
-        <h1>Record Transactions</h1>
-        <p>Search, filter and manage daily records</p>
+        <h1>{t.title}</h1>
+        <p>{t.subtitle}</p>
       </header>
 
       <div className="filters-bar">
@@ -78,13 +150,13 @@ const Record = () => {
           <input
             type="text"
             className="search-input"
-            placeholder="Search items, customer, lender, ID..."
+            placeholder={t.searchPlaceholder}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
         <div className="date-group">
-          <label className="control-label">Date</label>
+          <label className="control-label">{t.date}</label>
           <input
             type="date"
             className="date-input"
@@ -93,13 +165,13 @@ const Record = () => {
           />
         </div>
         <div className="category-group">
-          <label className="control-label">Category</label>
+          <label className="control-label">{t.category}</label>
           <select className="category-select" value={selectedCategory} onChange={(e) => handleCategorySelect(e.target.value)}>
-            <option value="all">All</option>
-            <option value="sale">Sales</option>
-            <option value="expense">Expenses</option>
-            <option value="debt">Debt</option>
-            <option value="loan">Loans</option>
+            <option value="all">{t.all}</option>
+            <option value="sale">{t.sales}</option>
+            <option value="expense">{t.expenses}</option>
+            <option value="debt">{t.debt}</option>
+            <option value="loan">{t.loans}</option>
           </select>
         </div>
       </div>
@@ -107,14 +179,15 @@ const Record = () => {
       <div className="tables-wrap">
         {(selectedCategory === 'all' || selectedCategory === 'sale') && (
           <CategoryTable
-            title="Sales"
+            title={t.sales}
             categoryKey="sale"
             rows={byCategory.sale}
             kes={kes}
+            t={t}
             columns={[
-              { key: 'item', label: 'Item', type: 'text' },
-              { key: 'quantity', label: 'Quantity', type: 'number', min: 1 },
-              { key: 'amount', label: 'Amount (KSH)', type: 'number', min: 0 }
+              { key: 'item', label: t.item, type: 'text' },
+              { key: 'quantity', label: t.quantity, type: 'number', min: 1 },
+              { key: 'amount', label: t.amount, type: 'number', min: 0 }
             ]}
             onAdd={(data) => upsertTransaction('sale', data)}
             onUpdate={(id, data) => upsertTransaction('sale', data, id)}
@@ -124,15 +197,16 @@ const Record = () => {
 
         {(selectedCategory === 'all' || selectedCategory === 'expense') && (
           <CategoryTable
-            title="Expenses"
+            title={t.expenses}
             categoryKey="expense"
             rows={byCategory.expense}
             kes={kes}
+            t={t}
             columns={[
-              { key: 'expenseType', label: 'Expense Type', type: 'text' },
-              { key: 'item', label: 'Item', type: 'text' },
-              { key: 'quantity', label: 'Quantity', type: 'number', min: 1 },
-              { key: 'amount', label: 'Amount (KSH)', type: 'number', min: 0 }
+              { key: 'expenseType', label: t.expenseType, type: 'text' },
+              { key: 'item', label: t.item, type: 'text' },
+              { key: 'quantity', label: t.quantity, type: 'number', min: 1 },
+              { key: 'amount', label: t.amount, type: 'number', min: 0 }
             ]}
             onAdd={(data) => upsertTransaction('expense', data)}
             onUpdate={(id, data) => upsertTransaction('expense', data, id)}
@@ -142,15 +216,16 @@ const Record = () => {
 
         {(selectedCategory === 'all' || selectedCategory === 'debt') && (
           <CategoryTable
-            title="Debt"
+            title={t.debt}
             categoryKey="debt"
             rows={byCategory.debt}
             kes={kes}
+            t={t}
             columns={[
-              { key: 'customerName', label: 'Customer Name', type: 'text' },
-              { key: 'item', label: 'Item', type: 'text' },
-              { key: 'amount', label: 'Amount (KSH)', type: 'number', min: 0 },
-              { key: 'status', label: 'Status', type: 'select', options: ['paid', 'unpaid'] }
+              { key: 'customerName', label: t.customerName, type: 'text' },
+              { key: 'item', label: t.item, type: 'text' },
+              { key: 'amount', label: t.amount, type: 'number', min: 0 },
+              { key: 'status', label: t.status, type: 'select', options: ['paid', 'unpaid'] }
             ]}
             onAdd={(data) => upsertTransaction('debt', data)}
             onUpdate={(id, data) => upsertTransaction('debt', data, id)}
@@ -160,14 +235,15 @@ const Record = () => {
 
         {(selectedCategory === 'all' || selectedCategory === 'loan') && (
           <CategoryTable
-            title="Loans"
+            title={t.loans}
             categoryKey="loan"
             rows={byCategory.loan}
             kes={kes}
+            t={t}
             columns={[
-              { key: 'lender', label: 'Lender', type: 'text' },
-              { key: 'amount', label: 'Amount (KSH)', type: 'number', min: 0 },
-              { key: 'status', label: 'Status', type: 'select', options: ['paid', 'unpaid'] }
+              { key: 'lender', label: t.lender, type: 'text' },
+              { key: 'amount', label: t.amount, type: 'number', min: 0 },
+              { key: 'status', label: t.status, type: 'select', options: ['paid', 'unpaid'] }
             ]}
             onAdd={(data) => upsertTransaction('loan', data)}
             onUpdate={(id, data) => upsertTransaction('loan', data, id)}
@@ -181,7 +257,7 @@ const Record = () => {
 
 export default Record;
 
-const CategoryTable = ({ title, categoryKey, rows, columns, kes, onAdd, onUpdate, onDelete }) => {
+const CategoryTable = ({ title, categoryKey, rows, columns, kes, t, onAdd, onUpdate, onDelete }) => {
   const total = useMemo(() => rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0), [rows]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -212,10 +288,10 @@ const CategoryTable = ({ title, categoryKey, rows, columns, kes, onAdd, onUpdate
   const submitModal = (data) => {
     const cleaned = cleanObject(data);
     if (modalMode === 'add') {
-      if (!window.confirm(`Add new ${title.slice(0, -1)}?`)) return;
+      if (!window.confirm(`${t.addNew} ${title.slice(0, -1)}?`)) return;
       onAdd(cleaned);
     } else if (modalMode === 'edit' && editingId) {
-      if (!window.confirm('Save changes?')) return;
+      if (!window.confirm(t.saveChanges)) return;
       onUpdate(editingId, cleaned);
     }
     closeModal();
@@ -226,7 +302,7 @@ const CategoryTable = ({ title, categoryKey, rows, columns, kes, onAdd, onUpdate
       <div className="category-header">
         <h3>{title}</h3>
         <div className="category-actions">
-          <button type="button" className="btn primary" onClick={openAddModal}>Add</button>
+          <button type="button" className="btn primary" onClick={openAddModal}>{t.add}</button>
         </div>
       </div>
 
@@ -236,13 +312,13 @@ const CategoryTable = ({ title, categoryKey, rows, columns, kes, onAdd, onUpdate
             <tr>
               <th>S/N</th>
               {columns.map(c => (<th key={c.key}>{c.label}</th>))}
-              <th>Actions</th>
+              <th>{t.actions}</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={columns.length + 2} className="empty">No records</td>
+                <td colSpan={columns.length + 2} className="empty">{t.noRecords}</td>
               </tr>
             )}
             {rows.map((row, idx) => (
@@ -254,15 +330,15 @@ const CategoryTable = ({ title, categoryKey, rows, columns, kes, onAdd, onUpdate
                   </td>
                 ))}
                 <td className="row-actions">
-                  <button className="btn small" onClick={() => openEditModal(row)}>Edit</button>
-                  <button className="btn small danger" onClick={() => { if (window.confirm('Delete this record?')) onDelete(row.id); }}>Delete</button>
+                  <button className="btn small" onClick={() => openEditModal(row)}>{t.edit}</button>
+                  <button className="btn small danger" onClick={() => { if (window.confirm(t.deleteRecord)) onDelete(row.id); }}>{t.delete}</button>
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr>
-              <td className="total-cell" colSpan={columns.length + 1}>Total</td>
+              <td className="total-cell" colSpan={columns.length + 1}>{t.total}</td>
               <td className="total-amount">{kes.format(total)}</td>
             </tr>
           </tfoot>
@@ -270,11 +346,12 @@ const CategoryTable = ({ title, categoryKey, rows, columns, kes, onAdd, onUpdate
       </div>
       {modalOpen && (
         <ModalForm
-          title={`${modalMode === 'add' ? 'Add' : 'Edit'} ${title.slice(0, -1)}`}
+          title={`${modalMode === 'add' ? t.add : t.edit} ${title.slice(0, -1)}`}
           columns={columns}
           initialData={modalData}
           onCancel={closeModal}
           onSubmit={submitModal}
+          t={t}
         />
       )}
     </section>
@@ -306,7 +383,7 @@ const cleanObject = (obj) => {
   return out;
 };
 
-const ModalForm = ({ title, columns, initialData, onCancel, onSubmit }) => {
+const ModalForm = ({ title, columns, initialData, onCancel, onSubmit, t }) => {
   const [formData, setFormData] = useState(() => {
     const base = {};
     columns.forEach(c => { base[c.key] = initialData[c.key] ?? ''; });
@@ -353,7 +430,7 @@ const ModalForm = ({ title, columns, initialData, onCancel, onSubmit }) => {
               <label className="modal-label">{col.label}</label>
               {col.type === 'select' ? (
                 <select className="input" value={formData[col.key]} onChange={(e) => handleChange(col.key, e.target.value, col)}>
-                  <option value="">Select</option>
+                  <option value="">{t.select}</option>
                   {col.options.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
@@ -370,8 +447,8 @@ const ModalForm = ({ title, columns, initialData, onCancel, onSubmit }) => {
             </div>
           ))}
           <div className="modal-actions">
-            <button type="button" className="btn" onClick={onCancel}>Cancel</button>
-            <button type="submit" className="btn primary">Save</button>
+            <button type="button" className="btn" onClick={onCancel}>{t.cancel}</button>
+            <button type="submit" className="btn primary">{t.save}</button>
           </div>
         </form>
       </div>
