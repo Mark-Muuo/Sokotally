@@ -1,19 +1,17 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import TopBar from './components/TopBar';
 import Dashboard from './components/Dashboard';
 import Record from './components/Record';
 import Report from './components/Report';
+import SokoAssistant from './components/SokoAssistant';
 import Welcome from './pages/Welcome';
 import SignUp from './pages/SignUp';
 import SignIn from './pages/SignIn';
 import ResetPassword from './pages/ResetPassword';
 import Profile from './pages/Profile';
-import './pages/Welcome.css';
-import './pages/Auth.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import './App.css';
+import { ThemeProvider } from './context/ThemeContext';
 
 const PrivateRoute = ({ children }) => {
   const { user } = useAuth();
@@ -23,8 +21,9 @@ const PrivateRoute = ({ children }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
+    <ThemeProvider>
+      <AuthProvider>
+        <Router>
         <Routes>
           <Route path="/" element={<Welcome />} />
           <Route path="/signup" element={<SignUp />} />
@@ -55,6 +54,14 @@ function App() {
             }
           />
           <Route
+            path="/assistant"
+            element={
+              <PrivateRoute>
+                <Layout><SokoAssistant /></Layout>
+              </PrivateRoute>
+            }
+          />
+          <Route
             path="/profile"
             element={
               <PrivateRoute>
@@ -63,8 +70,9 @@ function App() {
             }
           />
         </Routes>
-      </Router>
-    </AuthProvider>
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

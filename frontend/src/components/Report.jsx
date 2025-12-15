@@ -1,342 +1,308 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import './Report.css';
+import { getToken } from '../storage/auth';
+import StatsCard from './shared/StatsCard';
+import Card from './shared/Card';
+import ProgressBar from './shared/ProgressBar';
+import Badge from './shared/Badge';
+import DataTable from './shared/DataTable';
+import { API_BASE } from '../config/api';
+import { formatCurrency } from '../utils/formatters';
 
 const Report = () => {
-  const [filterType, setFilterType] = useState('monthly');
-  const [customerRange, setCustomerRange] = useState('all');
+  const [data, setData] = useState(null);
 
-  // Language support
-  const [lang, setLang] = useState(() => localStorage.getItem('sokotally_lang') || 'en');
-  useEffect(() => {
-    const handler = () => setLang(localStorage.getItem('sokotally_lang') || 'en');
-    window.addEventListener('langChange', handler);
-    return () => window.removeEventListener('langChange', handler);
-  }, []);
-  const t = useMemo(() => ({
-    en: {
-      title: 'Financial Reports',
-      subtitle: 'Comprehensive financial analysis and business insights',
-      reportPeriod: 'Report Period:',
-      daily: 'Daily',
-      weekly: 'Weekly',
-      monthly: 'Monthly',
-      customerRange: 'Customer Range:',
-      allCustomers: 'All Customers',
-      top10: 'Top 10 Customers',
-      top20: 'Top 20 Customers',
-      exportReport: 'Export Report',
-      profitLoss: 'Profit & Loss Statement',
-      totalSales: 'Total Sales',
-      totalExpenses: 'Total Expenses',
-      netProfitLoss: 'Net Profit/Loss',
-      debtLoans: 'Debt & Loans Management',
-      peopleOwed: 'People Owed',
-      loanInstitutions: 'Loan Institutions',
-      expenseAnalysis: 'Expense Analysis',
-      stockSales: 'Stock Sales Report',
-      aiInsights: 'AI Business Insights',
-      profitable: 'Your business is profitable with a positive net income.',
-      loss: 'Your business is currently operating at a loss. Consider reducing expenses or increasing sales.',
-      debtCollection: 'You have more outstanding debts than paid ones. Consider implementing a debt collection strategy.',
-      debtGood: 'Your debt collection is going well.',
-      monitorProducts: 'Monitor your top-performing products and consider increasing inventory'
-    },
-    sw: {
-      title: 'Ripoti za Kifedha',
-      subtitle: 'Uchambuzi wa kifedha na ufahamu wa biashara',
-      reportPeriod: 'Kipindi cha Ripoti:',
-      daily: 'Kila Siku',
-      weekly: 'Kila Wiki',
-      monthly: 'Kila Mwezi',
-      customerRange: 'Aina ya Wateja:',
-      allCustomers: 'Wateja Wote',
-      top10: 'Wateja 10 Bora',
-      top20: 'Wateja 20 Bora',
-      exportReport: 'Hamisha Ripoti',
-      profitLoss: 'Taarifa ya Faida na Hasara',
-      totalSales: 'Mauzo ya Jumla',
-      totalExpenses: 'Gharama za Jumla',
-      netProfitLoss: 'Faida/Hasara ya Wavu',
-      debtLoans: 'Usimamizi wa Deni na Mikopo',
-      peopleOwed: 'Watu Wanaodaiwa',
-      loanInstitutions: 'Mashirika ya Mikopo',
-      expenseAnalysis: 'Uchambuzi wa Gharama',
-      stockSales: 'Ripoti ya Uuzaji wa Bidhaa',
-      aiInsights: 'Ufahamu wa AI wa Biashara',
-      profitable: 'Biashara yako ina faida na mapato chanya.',
-      loss: 'Biashara yako sasa ina hasara. Fikiria kupunguza gharama au kuongeza mauzo.',
-      debtCollection: 'Una deni zaidi za kukamilika kuliko zilizolipwa. Fikiria mbinu ya kukusanya deni.',
-      debtGood: 'Ukusanyaji wa deni unaenda vizuri.',
-      monitorProducts: 'Fuatilia bidhaa zako bora na fikiria kuongeza hesabu'
-    }
-  })[lang], [lang]);
-
-  // Mock data
-  const [reportData, setReportData] = useState({
-    sales: [],
-    expenses: [],
-    debts: [],
-    loans: [],
-    stock: []
-  });
-
-  useEffect(() => {
-    generateMockData();
-  }, [filterType, customerRange]);
-
-  const generateMockData = () => {
-    const now = new Date();
-    let periods = [];
+  const fetchData = () => {
+    const token = getToken();
+    if (!token) return;
     
-    // Generate data based on filter type
-    switch (filterType) {
-      case 'daily':
-        periods = Array.from({ length: 7 }, (_, i) => {
-          const date = new Date(now);
-          date.setDate(date.getDate() - i);
-          return date;
-        });
-        break;
-      case 'weekly':
-        periods = Array.from({ length: 4 }, (_, i) => {
-          const date = new Date(now);
-          date.setDate(date.getDate() - (i * 7));
-          return date;
-        });
-        break;
-      case 'monthly':
-        periods = Array.from({ length: 6 }, (_, i) => {
-          const date = new Date(now);
-          date.setMonth(date.getMonth() - i);
-          return date;
-        });
-        break;
-    }
-
-    // Mock sales data
-    const sales = periods.map(period => ({
-      date: period,
-      amount: Math.floor(Math.random() * 50000) + 10000,
-      customer: `Customer ${Math.floor(Math.random() * 20) + 1}`
-    }));
-
-    // Mock expense data
-    const expenses = [
-      { category: 'Rent', amount: 15000 },
-      { category: 'Utilities', amount: 5000 },
-      { category: 'Supplies', amount: 8000 },
-      { category: 'Marketing', amount: 3000 },
-      { category: 'Salaries', amount: 25000 },
-      { category: 'Other', amount: 2000 }
-    ];
-
-    // Mock debt data
-    const debts = [
-      { person: 'John Doe', amount: 50000, status: 'unpaid' },
-      { person: 'Jane Smith', amount: 25000, status: 'paid' },
-      { person: 'Mike Johnson', amount: 75000, status: 'unpaid' },
-      { person: 'Sarah Wilson', amount: 30000, status: 'partial' }
-    ];
-
-    // Mock loan data
-    const loans = [
-      { institution: 'Bank A', amount: 200000, repaymentPeriod: '24 months' },
-      { institution: 'Bank B', amount: 150000, repaymentPeriod: '36 months' },
-      { institution: 'Credit Union', amount: 100000, repaymentPeriod: '12 months' }
-    ];
-
-    // Mock stock data
-    const stock = [
-      { item: 'Rice', sold: 150, revenue: 45000 },
-      { item: 'Beans', sold: 120, revenue: 36000 },
-      { item: 'Maize', sold: 200, revenue: 60000 },
-      { item: 'Wheat', sold: 80, revenue: 24000 },
-      { item: 'Sugar', sold: 90, revenue: 27000 }
-    ];
-
-    setReportData({ sales, expenses, debts, loans, stock });
+    fetch(`${API_BASE}/api/transactions/stats/dashboard`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(d => setData(d))
+      .catch(err => console.error(err));
   };
 
-  // Calculate totals
-  const totalSales = reportData.sales.reduce((sum, sale) => sum + sale.amount, 0);
-  const totalExpenses = reportData.expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const netProfit = totalSales - totalExpenses;
-  const totalDebts = reportData.debts.reduce((sum, debt) => sum + debt.amount, 0);
-  const paidDebts = reportData.debts.filter(debt => debt.status === 'paid').reduce((sum, debt) => sum + debt.amount, 0);
-  const unpaidDebts = totalDebts - paidDebts;
+  useEffect(() => {
+    fetchData();
+    // Auto-refresh every 30 seconds to catch new transactions
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [API_BASE]);
 
-  const handleExportPDF = () => {
-    const printContent = `
-      Financial Report
-      Report Period: ${filterType.charAt(0).toUpperCase() + filterType.slice(1)}
-      
-      Profit & Loss Summary:
-      Total Sales: KSh ${totalSales.toLocaleString()}
-      Total Expenses: KSh ${totalExpenses.toLocaleString()}
-      Net Profit/Loss: KSh ${netProfit.toLocaleString()}
-      
-      Debt Summary:
-      Total Outstanding Debts: KSh ${totalDebts.toLocaleString()}
-    `;
+  const stats = useMemo(() => {
+    if (!data) return { sales: 0, expenses: 0, profit: 0, debt: 0 };
+    return {
+      sales: data.sales || 0,
+      expenses: data.expenses || 0,
+      profit: data.profit || 0,
+      debt: data.debts?.outstandingTotal || 0,
+      debtCount: data.debts?.outstandingCount || 0,
+      dueSoon: data.debts?.dueSoonTotal || 0
+    };
+  }, [data]);
+
+  const expenses = useMemo(() => {
+    if (!data?.recentTransactions) return [];
+    const txs = data.recentTransactions.filter(t => t.type === 'expense');
+    const categories = {};
     
-    const blob = new Blob([printContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `financial-report-${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+    txs.forEach(t => {
+      const cat = t.notes || t.category || 'Other Expenses';
+      categories[cat] = (categories[cat] || 0) + (t.amount || 0);
+    });
+    
+    const total = Object.values(categories).reduce((sum, amt) => sum + amt, 0);
+    return Object.entries(categories)
+      .map(([cat, amt]) => ({ category: cat, amount: amt, percent: total > 0 ? (amt / total) * 100 : 0 }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 8);
+  }, [data]);
+
+  const topItems = useMemo(() => {
+    if (!data?.recentTransactions) return [];
+    const items = {};
+    
+    data.recentTransactions
+      .filter(t => t.type === 'income' && t.items && t.items.length > 0)
+      .forEach(t => {
+        t.items.forEach(item => {
+          const itemName = item.name;
+          const itemTotal = item.totalPrice || (item.unitPrice * item.quantity) || 0;
+          items[itemName] = (items[itemName] || 0) + itemTotal;
+        });
+      });
+    
+    return Object.entries(items)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [data]);
+
+  const debts = useMemo(() => {
+    if (!data?.recentTransactions) return [];
+    return data.recentTransactions
+      .filter(t => t.type === 'debt' && t.status !== 'paid')
+      .map(t => ({
+        lender: t.lender || t.customerName || 'Unknown',
+        amount: t.amount,
+        date: new Date(t.occurredAt).toLocaleDateString(),
+        status: t.status || 'unpaid'
+      }))
+      .slice(0, 5);
+  }, [data]);
+
+  const recentTxs = useMemo(() => {
+    if (!data?.recentTransactions) return [];
+    return data.recentTransactions.slice(0, 10).map(t => {
+      let description = t.notes || t.type;
+      
+      // If transaction has items, show item names
+      if (t.items && t.items.length > 0) {
+        description = t.items.map(item => item.name).join(', ');
+      }
+      
+      return {
+        date: new Date(t.occurredAt).toLocaleDateString(),
+        type: t.type,
+        description: description,
+        amount: t.amount
+      };
+    });
+  }, [data]);
 
   return (
-    <div className="report-page">
-      <div className="page-header">
-        <h1>📊 {t.title}</h1>
-        <p>{t.subtitle}</p>
-        
-        {/* Filter Controls */}
-        <div className="filter-controls">
-          <div className="filter-group">
-            <label>{t.reportPeriod}</label>
-            <select 
-              value={filterType} 
-              onChange={(e) => setFilterType(e.target.value)}
-              className="filter-select"
-            >
-              <option value="daily">{t.daily}</option>
-              <option value="weekly">{t.weekly}</option>
-              <option value="monthly">{t.monthly}</option>
-            </select>
-          </div>
-          
-          <div className="filter-group">
-            <label>{t.customerRange}</label>
-            <select 
-              value={customerRange} 
-              onChange={(e) => setCustomerRange(e.target.value)}
-              className="filter-select"
-            >
-              <option value="all">{t.allCustomers}</option>
-              <option value="top10">{t.top10}</option>
-              <option value="top20">{t.top20}</option>
-            </select>
-          </div>
-          
-          <button onClick={handleExportPDF} className="export-btn">
-            📄 {t.exportReport}
+    <div className="p-6 space-y-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen">
+      <div className="flex items-center justify-between p-6 bg-gradient-to-r from-slate-800/40 to-slate-900/30 border border-slate-700/50 rounded-2xl shadow-2xl">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent flex items-center gap-3">
+            <span className="text-4xl">📊</span>
+            Business Reports
+          </h1>
+          <p className="text-slate-400 mt-1 text-sm">Comprehensive analytics and insights 📈</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={fetchData}
+            className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-sm font-semibold rounded-xl transition-all duration-200 flex items-center gap-2 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-105"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            Refresh
+          </button>
+          <button className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white text-sm font-semibold rounded-xl transition-all duration-200 flex items-center gap-2 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-105">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Export Report
           </button>
         </div>
       </div>
-      
-      <div className="report-content">
-        {/* Profit & Loss Section */}
-        <section className="report-section">
-          <h2>💰 {t.profitLoss}</h2>
-          <div className="pl-summary">
-            <div className="pl-card sales">
-              <h3>{t.totalSales}</h3>
-              <div className="amount">KSh {totalSales.toLocaleString()}</div>
-            </div>
-            <div className="pl-card expenses">
-              <h3>{t.totalExpenses}</h3>
-              <div className="amount">KSh {totalExpenses.toLocaleString()}</div>
-            </div>
-            <div className={`pl-card net ${netProfit >= 0 ? 'profit' : 'loss'}`}>
-              <h3>{t.netProfitLoss}</h3>
-              <div className="amount">KSh {netProfit.toLocaleString()}</div>
-            </div>
-          </div>
-        </section>
 
-        {/* Debt & Loans Section */}
-        <section className="report-section">
-          <h2>💳 {t.debtLoans}</h2>
-          
-          <div className="debt-summary">
-            <div className="debt-cards">
-              <div className="debt-card">
-                <h3>{t.peopleOwed}</h3>
-                <div className="debt-list">
-                  {reportData.debts.map((debt, index) => (
-                    <div key={index} className="debt-item">
-                      <span className="person">{debt.person}</span>
-                      <span className={`amount ${debt.status}`}>KSh {debt.amount.toLocaleString()}</span>
-                      <span className={`status ${debt.status}`}>{debt.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="debt-card">
-                <h3>{t.loanInstitutions}</h3>
-                <div className="loan-list">
-                  {reportData.loans.map((loan, index) => (
-                    <div key={index} className="loan-item">
-                      <span className="institution">{loan.institution}</span>
-                      <span className="amount">KSh {loan.amount.toLocaleString()}</span>
-                      <span className="period">{loan.repaymentPeriod}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Expenses Section */}
-        <section className="report-section">
-          <h2>💸 {t.expenseAnalysis}</h2>
-          
-          <div className="expense-breakdown">
-            <div className="expense-list">
-              {reportData.expenses.map((expense, index) => (
-                <div key={index} className="expense-item">
-                  <span className="category">{expense.category}</span>
-                  <span className="amount">KSh {expense.amount.toLocaleString()}</span>
-                  <span className="percentage">
-                    {((expense.amount / totalExpenses) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Stock Report Section */}
-        <section className="report-section">
-          <h2>📦 {t.stockSales}</h2>
-          
-          <div className="stock-overview">
-            <div className="stock-list">
-              {reportData.stock.map((item, index) => (
-                <div key={index} className="stock-item">
-                  <span className="item-name">{item.item}</span>
-                  <span className="quantity-sold">{item.sold} units</span>
-                  <span className="revenue">KSh {item.revenue.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* AI Summary Section */}
-        <section className="report-section ai-summary">
-          <h2>🤖 {t.aiInsights}</h2>
-          <div className="ai-insights">
-            <div className="insight-item">
-              {netProfit > 0 ? `✅ ${t.profitable}` : `⚠️ ${t.loss}`}
-            </div>
-            <div className="insight-item">
-              {unpaidDebts > paidDebts ? `📊 ${t.debtCollection}` : `✅ ${t.debtGood}`}
-            </div>
-            <div className="insight-item">
-              💡 {t.monitorProducts}
-            </div>
-          </div>
-        </section>
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard label="Total Sales" value={formatCurrency(stats.sales)} color="emerald" gradient icon="💰" />
+        <StatsCard label="Total Expenses" value={formatCurrency(stats.expenses)} color="red" gradient icon="💸" />
+        <StatsCard label="Net Profit" value={formatCurrency(stats.profit)} color={stats.profit >= 0 ? 'blue' : 'amber'} gradient icon="📈" />
+        <StatsCard label="Outstanding Debt" value={formatCurrency(stats.debt)} color="purple" gradient icon="💳" />
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Debts Summary */}
+        <Card variant="glass" title="Debts & Loans" icon="💳">
+          {debts.length > 0 ? (
+            <div className="space-y-3">
+              {debts.map((debt, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                      <span className="text-lg">💳</span>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">{debt.lender}</p>
+                      <p className="text-slate-400 text-xs">{debt.date}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-purple-400 font-semibold text-sm">{formatCurrency(debt.amount)}</p>
+                    <Badge variant={debt.status === 'unpaid' ? 'danger' : 'warning'} size="small">{debt.status}</Badge>
+                  </div>
+                </div>
+              ))}
+              <div className="pt-3 border-t border-slate-700/50">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-sm">Total Outstanding</span>
+                  <span className="text-white font-bold text-lg">{formatCurrency(stats.debt)}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-slate-500 text-sm">No outstanding debts</p>
+            </div>
+          )}
+        </Card>
+
+        {/* Top Selling Items */}
+        <Card variant="glass" title="Top Selling Items" icon="🏆">
+          {topItems.length > 0 ? (
+            <div className="space-y-3">
+              {topItems.map((item, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                      <span className="text-sm font-bold text-emerald-400">#{i + 1}</span>
+                    </div>
+                    <span className="text-white text-sm font-medium">{item.name}</span>
+                  </div>
+                  <span className="text-emerald-400 font-semibold text-sm">{formatCurrency(item.total)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-slate-500 text-sm">No sales data available</p>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Expenses Breakdown */}
+      <Card variant="glass" title="Expenses Breakdown" icon="📊">
+        {expenses.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {expenses.map((exp, i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white text-sm font-medium">{exp.category}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="danger" size="small">{exp.percent.toFixed(1)}%</Badge>
+                    <span className="text-white font-semibold text-sm">{formatCurrency(exp.amount)}</span>
+                  </div>
+                </div>
+                <ProgressBar value={exp.percent} max={100} color="red" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-slate-500 text-sm">No expenses recorded</p>
+          </div>
+        )}
+      </Card>
+
+      {/* Recent Transactions Table */}
+      <Card variant="glass" title="Recent Transactions" icon="📋">
+        {recentTxs.length > 0 ? (
+          <DataTable
+            columns={[
+              { header: 'Date', key: 'date' },
+              { 
+                header: 'Type', 
+                key: 'type',
+                render: (row) => (
+                  <Badge 
+                    variant={row.type === 'income' ? 'success' : row.type === 'expense' ? 'danger' : 'warning'}
+                    size="small"
+                  >
+                    {row.type}
+                  </Badge>
+                )
+              },
+              { header: 'Description', key: 'description' },
+              { 
+                header: 'Amount', 
+                key: 'amount',
+                align: 'right',
+                render: (row) => (
+                  <span className={`font-semibold ${row.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {row.type === 'income' ? '+' : '-'}{formatCurrency(row.amount)}
+                  </span>
+                )
+              }
+            ]}
+            data={recentTxs}
+          />
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-slate-500 text-sm">No transactions found</p>
+          </div>
+        )}
+      </Card>
+
+      {/* Insights */}
+      <Card variant="glass" title="Business Insights">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3">
+              <span className="text-xl">💰</span>
+            </div>
+            <h4 className="text-sm font-semibold text-white mb-1">Revenue</h4>
+            <p className="text-xs text-slate-400">
+              {stats.sales > 0 ? `You've generated ${formatCurrency(stats.sales)} in sales` : 'Start recording sales to see insights'}
+            </p>
+          </div>
+          <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3">
+              <span className="text-xl">📊</span>
+            </div>
+            <h4 className="text-sm font-semibold text-white mb-1">Profit Margin</h4>
+            <p className="text-xs text-slate-400">
+              {stats.sales > 0 
+                ? `${((stats.profit / stats.sales) * 100).toFixed(1)}% profit margin` 
+                : 'Track sales and expenses to calculate'}
+            </p>
+          </div>
+          <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+            <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mb-3">
+              <span className="text-xl">💳</span>
+            </div>
+            <h4 className="text-sm font-semibold text-white mb-1">Debt Status</h4>
+            <p className="text-xs text-slate-400">
+              {stats.debt > 0 
+                ? `${formatCurrency(stats.debt)} in outstanding debt` 
+                : 'No outstanding debts'}
+            </p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };

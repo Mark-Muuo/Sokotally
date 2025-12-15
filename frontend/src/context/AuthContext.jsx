@@ -62,10 +62,10 @@ export const AuthProvider = ({ children }) => {
 
 	const value = useMemo(() => ({
 		user, loading, error,
-		signUp: async ({ name, phone, password }) => {
+		signUp: async ({ firstName, lastName, phone, password }) => {
 			setLoading(true); setError('');
 			try {
-				await apiRegister({ name, phone, password });
+				await apiRegister({ firstName, lastName, phone, password });
 				// Do not auto-login on signup; user should sign in explicitly
 				return true;
 			} catch (e) { setError(e.message || 'Registration failed'); throw e; }

@@ -1,17 +1,17 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+import { API_BASE } from '../config/api.js';
 
-export async function apiRegister({ name, phone, password }) {
-	const res = await fetch(`${API_BASE}/auth/register`, {
+export async function apiRegister({ firstName, lastName, phone, password }) {
+    const res = await fetch(`${API_BASE}/auth/register`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name, phone, password })
+        body: JSON.stringify({ firstName, lastName, phone, password })
 	});
 	if (!res.ok) throw new Error((await res.json()).error || 'Registration failed');
 	return res.json();
 }
 
 export async function apiLogin({ phone, password }) {
-	const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await fetch(`${API_BASE}/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ phone, password })
@@ -91,7 +91,7 @@ export function loginUser({ email, password }) {
 }
 
 export async function resetPassword({ phone, newPassword }) {
-	const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ phone, newPassword })
@@ -101,7 +101,7 @@ export async function resetPassword({ phone, newPassword }) {
 }
 
 export async function sendOTP({ phone }) {
-	const res = await fetch(`${API_BASE}/auth/send-otp`, {
+    const res = await fetch(`${API_BASE}/auth/send-otp`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ phone })
@@ -127,7 +127,7 @@ export async function sendOTP({ phone }) {
 }
 
 export async function verifyOTPLogin({ phone, otp }) {
-	const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+    const res = await fetch(`${API_BASE}/auth/verify-otp`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ phone, otp })
@@ -159,7 +159,7 @@ export async function getProfile() {
 		throw new Error('No valid token available');
 	}
 	
-	const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await fetch(`${API_BASE}/auth/me`, {
 		method: 'GET',
 		headers: { Authorization: `Bearer ${token}` }
 	});
@@ -195,7 +195,7 @@ export async function updateProfile(payload) {
 		throw new Error('No valid token available');
 	}
 	
-	const res = await fetch(`${API_BASE}/auth/profile`, {
+    const res = await fetch(`${API_BASE}/auth/profile`, {
 		method: 'PUT',
 		headers: {
 			'Content-Type': 'application/json',
@@ -235,7 +235,7 @@ export async function refreshToken() {
 		throw new Error('No token to refresh');
 	}
 	
-	const res = await fetch(`${API_BASE}/auth/refresh`, {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',

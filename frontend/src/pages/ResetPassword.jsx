@@ -16,26 +16,6 @@ const ResetPassword = () => {
 	const [otpSent, setOtpSent] = useState(false);
 	const [countdown, setCountdown] = useState(0);
 
-	// Always use English for pre-login pages
-	const t = {
-		title: 'Reset Password',
-		subtitle: 'Enter your phone number to receive a reset code',
-		phone: 'Phone Number',
-		sendCode: 'Send Code',
-		enterCode: 'Enter the code sent to your phone',
-		code: 'Verification Code',
-		resend: 'Resend Code',
-		newPassword: 'Enter your new password',
-		password: 'New Password',
-		confirm: 'Confirm Password',
-		reset: 'Reset Password',
-		backToSignIn: 'Back to Sign In',
-		codeSent: 'Code sent to your phone',
-		passwordReset: 'Password reset successfully',
-		invalidCode: 'Invalid verification code',
-		passwordsMatch: 'Passwords do not match'
-	};
-
 	// Start countdown timer for resend OTP
 	const startCountdown = () => {
 		setCountdown(60);
@@ -85,7 +65,7 @@ const ResetPassword = () => {
 		// TODO: Implement actual OTP resending logic
 		console.log('Resending OTP to:', phone);
 		startCountdown();
-		setOk(t.codeSent);
+		setOk('Code sent to your phone');
 	};
 
 	// Final password reset submission
@@ -93,10 +73,10 @@ const ResetPassword = () => {
 		e.preventDefault();
 		setError(''); setOk('');
 		if (!password || !confirm) return setError('Please fill all fields');
-		if (password !== confirm) return setError(t.passwordsMatch);
+		if (password !== confirm) return setError('Passwords do not match');
 		try {
 			await resetPassword({ phone, newPassword: password });
-			setOk(t.passwordReset);
+			setOk('Password reset successfully');
 			setTimeout(() => navigate('/signin'), 1200);
 		} catch (e) {
 			setError(e.message || 'Could not reset password');
@@ -104,32 +84,60 @@ const ResetPassword = () => {
 	};
 
 return (
-	<div className="auth-page">
-		<div className="auth-topbar">
-			<Link to="/" className="auth-home-link" aria-label="Back to Home" title="Back to Home">
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 2 }}>
+	<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0b1320] via-[#0e1726] to-[#0b1320] p-6 relative overflow-hidden">
+		{/* Subtle animated background glow */}
+		<div className="absolute inset-0 opacity-20">
+			<div className="absolute top-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
+			<div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1.5s'}}></div>
+		</div>
+
+		{/* Back to Home */}
+		<div className="fixed top-0 left-0 right-0 p-6 z-50">
+			<Link to="/" className="inline-flex items-center gap-2 text-slate-300 font-medium text-base px-4 py-2 hover:text-white transition-all duration-300">
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 					<path d="M15 18l-6-6 6-6"/>
 				</svg>
-				Home
+				Back to Home
 			</Link>
 		</div>
-		<form className="auth-card" onSubmit={step === 1 ? sendOTP : step === 2 ? verifyOTP : onSubmit}>
-			<h2 style={{ fontSize: '1.6rem' }}>{t.title}</h2>
-			<p style={{ margin: '0 0 1.5rem 0', color: '#6b7280', fontSize: '0.9rem' }}>{t.subtitle}</p>
-			{error && <div className="error" role="alert">{error}</div>}
+
+		<form onSubmit={step === 1 ? sendOTP : step === 2 ? verifyOTP : onSubmit} className="bg-slate-900/80 backdrop-blur-xl rounded-2xl p-10 w-full max-w-md shadow-2xl relative z-10 border border-slate-700/50">
+			{/* Logo Header */}
+			<div className="text-center mb-8">
+				<h1 className="text-4xl font-light text-white mb-2 tracking-wide">
+					SokoTally
+				</h1>
+			</div>
+
+			<h2 className="text-2xl font-light text-white mb-4 text-center">Reset Password</h2>
+			<p className="text-center text-slate-400 mb-8 text-sm font-light">
+				{step === 1 ? 'Enter your phone number to receive a reset code' : step === 2 ? 'Enter the code sent to your phone' : 'Enter your new password'}
+			</p>
+
+			{error && (
+				<div className="bg-red-500/10 text-red-400 px-4 py-3 rounded-lg mb-6 text-sm font-light border border-red-500/20 flex items-center gap-3" role="alert">
+					<span className="text-lg flex-shrink-0">⚠️</span>
+					<span>{error}</span>
+				</div>
+			)}
 			{ok && (
-				<div className="success" style={{background:'#e9f7ef', color:'#1e7e34', padding:'0.7rem 0.9rem', borderRadius:8}} role="status">{ok}</div>
+				<div className="bg-green-500/10 text-green-400 px-4 py-3 rounded-lg mb-6 text-sm font-light border border-green-500/20 flex items-center gap-3" role="status">
+					<span className="text-lg flex-shrink-0 font-medium">✓</span>
+					<span>{ok}</span>
+				</div>
 			)}
 
 			{/* Step 1: Phone */}
 			{step === 1 && (
-				<label style={{ fontSize: '1.05rem' }}>{t.phone}
+				<label className="block mb-6">
+					<span className="block mb-2 font-light text-slate-300 text-sm">Phone Number</span>
 					<input 
 						type="tel" 
 						value={phone} 
 						onChange={(e) => setPhone(e.target.value)} 
 						placeholder="0712345678 or +254712345678" 
 						disabled={otpSent}
+						className="w-full px-4 py-3 border rounded-lg text-base transition-all duration-200 bg-slate-800/50 text-white placeholder-slate-500 font-light focus:outline-none focus:bg-slate-800 border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
 					/>
 				</label>
 			)}
@@ -137,42 +145,36 @@ return (
 			{/* Step 2: OTP */}
 			{step === 2 && (
 				<>
-					<div style={{ marginBottom: '0.25rem', textAlign: 'center' }}>
-						<p style={{ fontSize: '1rem', color: '#666' }}>
-							{t.enterCode} <strong>{phone}</strong>
-						</p>
-					</div>
-					<label style={{ fontSize: '1.05rem' }}>{t.code}
+					<label className="block mb-6">
+						<span className="block mb-2 font-light text-slate-300 text-sm">Verification Code</span>
 						<input 
 							type="text" 
 							value={otp} 
 							onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} 
 							placeholder="123456"
 							maxLength="6"
-							style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '0.5rem' }}
+							className="w-full px-4 py-3 border rounded-lg text-base transition-all duration-200 bg-slate-800/50 text-white placeholder-slate-500 font-light focus:outline-none focus:bg-slate-800 border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 text-center text-xl tracking-[0.5rem]"
 						/>
 					</label>
-					<div style={{ textAlign: 'center' }}>
+					<div className="text-center mb-4">
 						{countdown > 0 ? (
-							<p style={{ fontSize: '0.9rem', color: '#666' }}>
-								{t.resend} in {countdown}s
+							<p className="text-sm text-slate-400 font-light">
+								Resend Code in <span className="font-medium text-blue-500">{countdown}s</span>
 							</p>
 						) : (
 							<button 
 								type="button" 
-								className="btn" 
 								onClick={resendOTP}
-								style={{ fontSize: '0.9rem', padding: '0.5rem 1rem' }}
+								className="text-blue-500 font-medium text-sm hover:text-blue-400 transition-colors underline"
 							>
-								{t.resend}
+								Resend Code
 							</button>
 						)}
 					</div>
 					<button 
 						type="button" 
-						className="btn" 
 						onClick={() => setStep(1)}
-						style={{ fontSize: '0.9rem' }}
+						className="w-full text-sm text-slate-400 font-light hover:text-white transition-colors mb-4"
 					>
 						Change Phone Number
 					</button>
@@ -182,48 +184,43 @@ return (
 			{/* Step 3: New Password */}
 			{step === 3 && (
 				<>
-					<div style={{ marginBottom: '0.25rem', textAlign: 'center' }}>
-						<p style={{ fontSize: '1rem', color: '#666' }}>
-							{t.newPassword} <strong>{phone}</strong>
-						</p>
-					</div>
-					<label style={{ fontSize: '1.05rem' }}>{t.password}
-						<div style={{ display:'flex', alignItems:'center', gap:8 }}>
-							<input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} />
-							<button type="button" className="btn" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'} style={{ padding: '0.3rem 0.5rem' }}>
-								{showPassword ? (
-									<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-										<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-10-8-10-8a18.16 18.16 0 0 1 5.06-6.94"/>
-										<path d="M1 1l22 22"/>
-										<path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 10 8 10 8a18.14 18.14 0 0 1-3.16 4.19"/>
-										<path d="M14.12 14.12A3 3 0 0 1 9.88 9.88"/>
-									</svg>
-								) : (
-									<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-										<path d="M1 12s3-8 11-8 11 8 11 8-3 8-11 8-11-8-11-8z"/>
-										<circle cx="12" cy="12" r="3"/>
-									</svg>
-								)}
+					<label className="block mb-5">
+						<span className="block mb-2 font-light text-slate-300 text-sm">New Password</span>
+						<div className="relative flex items-center gap-2">
+							<input 
+								type={showPassword ? 'text' : 'password'} 
+								value={password} 
+								onChange={(e) => setPassword(e.target.value)} 
+								placeholder="••••••••"
+								className="flex-1 px-4 py-3 border rounded-lg text-base transition-all duration-200 bg-slate-800/50 text-white placeholder-slate-500 font-light focus:outline-none focus:bg-slate-800 border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
+							/>
+							<button 
+								type="button" 
+								onClick={() => setShowPassword(v => !v)} 
+								className="px-4 py-3 text-slate-400 text-sm font-light rounded-lg hover:text-white hover:bg-slate-800 transition-all duration-200"
+								aria-label={showPassword ? 'Hide password' : 'Show password'}
+							>
+								{showPassword ? 'Hide' : 'Show'}
 							</button>
 						</div>
 					</label>
-					<label style={{ fontSize: '1.05rem' }}>{t.confirm}
-						<div style={{ display:'flex', alignItems:'center', gap:8 }}>
-							<input type={showConfirm ? 'text' : 'password'} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-							<button type="button" className="btn" onClick={() => setShowConfirm(v => !v)} aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'} title={showConfirm ? 'Hide confirm password' : 'Show confirm password'} style={{ padding: '0.3rem 0.5rem' }}>
-								{showConfirm ? (
-									<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-										<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-10-8-10-8a18.16 18.16 0 0 1 5.06-6.94"/>
-										<path d="M1 1l22 22"/>
-										<path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 10 8 10 8a18.14 18.14 0 0 1-3.16 4.19"/>
-										<path d="M14.12 14.12A3 3 0 0 1 9.88 9.88"/>
-									</svg>
-								) : (
-									<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-										<path d="M1 12s3-8 11-8 11 8 11 8-3 8-11 8-11-8-11-8z"/>
-										<circle cx="12" cy="12" r="3"/>
-									</svg>
-								)}
+					<label className="block mb-6">
+						<span className="block mb-2 font-light text-slate-300 text-sm">Confirm Password</span>
+						<div className="relative flex items-center gap-2">
+							<input 
+								type={showConfirm ? 'text' : 'password'} 
+								value={confirm} 
+								onChange={(e) => setConfirm(e.target.value)} 
+								placeholder="••••••••"
+								className="flex-1 px-4 py-3 border rounded-lg text-base transition-all duration-200 bg-slate-800/50 text-white placeholder-slate-500 font-light focus:outline-none focus:bg-slate-800 border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
+							/>
+							<button 
+								type="button" 
+								onClick={() => setShowConfirm(v => !v)} 
+								className="px-4 py-3 text-slate-400 text-sm font-light rounded-lg hover:text-white hover:bg-slate-800 transition-all duration-200"
+								aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'}
+							>
+								{showConfirm ? 'Hide' : 'Show'}
 							</button>
 						</div>
 					</label>
@@ -231,12 +228,19 @@ return (
 			)}
 
 			{/* Submit */}
-			<button className="btn primary" type="submit" style={{ fontSize: '1rem' }}>
-				{step === 1 ? t.sendCode : step === 2 ? 'Verify OTP' : t.reset}
+			<button 
+				type="submit"
+				className="w-full px-6 py-3 bg-white text-slate-900 text-base font-medium rounded-lg shadow-lg hover:shadow-xl hover:bg-slate-50 transition-all duration-200"
+			>
+				<span>{step === 1 ? 'Send Code' : step === 2 ? 'Verify OTP' : 'Reset Password'}</span>
 			</button>
 
 			{/* Footer links */}
-			<p><Link to="/signin">{t.backToSignIn}</Link></p>
+			<div className="text-center mt-6 pt-6 border-t border-slate-700/50">
+				<Link to="/signin" className="text-blue-500 font-medium text-sm hover:text-blue-400 hover:underline transition-all">
+					Back to Sign In
+				</Link>
+			</div>
 		</form>
 	</div>
 );
