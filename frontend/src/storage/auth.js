@@ -159,33 +159,47 @@ export async function getProfile() {
 		throw new Error('No valid token available');
 	}
 	
-    const res = await fetch(`${API_BASE}/auth/me`, {
-		method: 'GET',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-	const contentType = res.headers.get('content-type') || '';
-	if (!res.ok) {
-		let message = 'Failed to load profile';
-		try {
-			if (contentType.includes('application/json')) {
-				const data = await res.json();
-				message = data.error || message;
-				// Handle token expiration
-				if (data.code === 'TOKEN_EXPIRED') {
-					clearToken();
-					throw new Error('Session expired. Please sign in again.');
+	try {
+		const res = await fetch(`${API_BASE}/auth/me`, {
+			method: 'GET',
+			headers: { Authorization: `Bearer ${token}` }
+		});
+		const contentType = res.headers.get('content-type') || '';
+		if (!res.ok) {
+			let message = 'Failed to load profile';
+			try {
+				if (contentType.includes('application/json')) {
+					const data = await res.json();
+					message = data.error || message;
+					// Handle token expiration or unauthorized access
+					if (data.code === 'TOKEN_EXPIRED' || res.status === 401 || res.status === 403) {
+						clearToken();
+						throw new Error('401: Session expired. Please sign in again.');
+					}
+				} else {
+					await res.text();
+					message = `${message}. Server responded with ${res.status}`;
+					// Only clear token for auth errors, not network/server errors
+					if (res.status === 401 || res.status === 403) {
+						clearToken();
+						throw new Error(`${res.status}: Authentication failed`);
+					}
 				}
-			} else {
-				await res.text();
-				message = `${message}. Server responded with ${res.status}`;
+			} catch (e) {
+				if (e.message.includes('401') || e.message.includes('403') || e.message.includes('Session expired')) throw e;
 			}
-		} catch (e) {
-			if (e.message.includes('Session expired')) throw e;
+			throw new Error(message);
 		}
-		throw new Error(message);
+		if (!contentType.includes('application/json')) throw new Error('Unexpected profile response');
+		return res.json();
+	} catch (e) {
+		// Only clear token for authentication errors, not network errors
+		if (e.message?.includes('401') || e.message?.includes('403') || e.message?.includes('Session expired')) {
+			throw e;
+		}
+		// For network errors, keep the token and let the user stay logged in
+		throw new Error('Network error. Please check your connection.');
 	}
-	if (!contentType.includes('application/json')) throw new Error('Unexpected profile response');
-	return res.json();
 }
 
 export async function updateProfile(payload) {

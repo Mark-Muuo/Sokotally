@@ -1,34 +1,49 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getToken } from '../storage/auth';
-import StatsCard from './shared/StatsCard';
-import Card from './shared/Card';
-import ProgressBar from './shared/ProgressBar';
-import Badge from './shared/Badge';
-import DataTable from './shared/DataTable';
 import { API_BASE } from '../config/api';
 import { formatCurrency } from '../utils/formatters';
 
 const Report = () => {
   const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
-  const fetchData = () => {
+  const fetchData = async () => {
+    setLoading(true);
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     
-    fetch(`${API_BASE}/api/transactions/stats/dashboard`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.ok ? res.json() : null)
-      .then(d => setData(d))
-      .catch(err => console.error(err));
+    try {
+      let url = `${API_BASE}/api/transactions/stats/report?period=${period}`;
+      if (period === 'month' && selectedMonth) {
+        url += `&startDate=${selectedMonth}-01`;
+      }
+      
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const reportData = await res.json();
+        setData(reportData);
+      }
+    } catch (err) {
+      console.error('Failed to fetch report:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchData();
-    // Auto-refresh every 30 seconds to catch new transactions
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, [API_BASE]);
+  }, [period, selectedMonth]);
 
   const stats = useMemo(() => {
     if (!data) return { sales: 0, expenses: 0, profit: 0, debt: 0 };
@@ -36,27 +51,8 @@ const Report = () => {
       sales: data.sales || 0,
       expenses: data.expenses || 0,
       profit: data.profit || 0,
-      debt: data.debts?.outstandingTotal || 0,
-      debtCount: data.debts?.outstandingCount || 0,
-      dueSoon: data.debts?.dueSoonTotal || 0
+      debt: data.loans?.outstandingTotal || 0,
     };
-  }, [data]);
-
-  const expenses = useMemo(() => {
-    if (!data?.recentTransactions) return [];
-    const txs = data.recentTransactions.filter(t => t.type === 'expense');
-    const categories = {};
-    
-    txs.forEach(t => {
-      const cat = t.notes || t.category || 'Other Expenses';
-      categories[cat] = (categories[cat] || 0) + (t.amount || 0);
-    });
-    
-    const total = Object.values(categories).reduce((sum, amt) => sum + amt, 0);
-    return Object.entries(categories)
-      .map(([cat, amt]) => ({ category: cat, amount: amt, percent: total > 0 ? (amt / total) * 100 : 0 }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 8);
   }, [data]);
 
   const topItems = useMemo(() => {
@@ -67,242 +63,303 @@ const Report = () => {
       .filter(t => t.type === 'income' && t.items && t.items.length > 0)
       .forEach(t => {
         t.items.forEach(item => {
-          const itemName = item.name;
+          const itemName = (item.name || '').toLowerCase().trim();
+          if (!itemName) return;
+          
           const itemTotal = item.totalPrice || (item.unitPrice * item.quantity) || 0;
-          items[itemName] = (items[itemName] || 0) + itemTotal;
+          
+          if (!items[itemName]) {
+            items[itemName] = { name: item.name, total: 0, quantity: 0 };
+          }
+          items[itemName].total += itemTotal;
+          items[itemName].quantity += item.quantity || 0;
         });
       });
     
-    return Object.entries(items)
-      .map(([name, total]) => ({ name, total }))
+    return Object.values(items)
       .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
+      .slice(0, 10);
   }, [data]);
 
-  const debts = useMemo(() => {
+  const expenses = useMemo(() => {
     if (!data?.recentTransactions) return [];
-    return data.recentTransactions
-      .filter(t => t.type === 'debt' && t.status !== 'paid')
-      .map(t => ({
-        lender: t.lender || t.customerName || 'Unknown',
-        amount: t.amount,
-        date: new Date(t.occurredAt).toLocaleDateString(),
-        status: t.status || 'unpaid'
+    const categories = {};
+    
+    data.recentTransactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const cat = t.notes || t.category || 'Other Expenses';
+        categories[cat] = (categories[cat] || 0) + (t.amount || 0);
+      });
+    
+    const total = Object.values(categories).reduce((sum, amt) => sum + amt, 0);
+    return Object.entries(categories)
+      .map(([cat, amt]) => ({ 
+        category: cat, 
+        amount: amt, 
+        percent: total > 0 ? (amt / total) * 100 : 0 
       }))
-      .slice(0, 5);
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 8);
   }, [data]);
 
-  const recentTxs = useMemo(() => {
-    if (!data?.recentTransactions) return [];
-    return data.recentTransactions.slice(0, 10).map(t => {
-      let description = t.notes || t.type;
+  const handleDownload = async (type) => {
+    const token = getToken();
+    if (!token) return;
+    
+    try {
+      let url = `${API_BASE}/api/transactions/`;
+      let filename = 'sokotally-report';
       
-      // If transaction has items, show item names
-      if (t.items && t.items.length > 0) {
-        description = t.items.map(item => item.name).join(', ');
+      if (type === 'csv') {
+        url += 'export';
+        if (selectedMonth && period === 'month') {
+          url += `?startDate=${selectedMonth}-01`;
+        }
+        filename += `-${selectedMonth || new Date().toISOString().split('T')[0]}.csv`;
+      } else if (type === 'ai') {
+        url += 'reports/ai?format=pdf&download=1';
+        if (selectedMonth && period === 'month') {
+          url += `&month=${selectedMonth}`;
+        }
+        filename += `-ai-${selectedMonth || new Date().toISOString().split('T')[0]}.pdf`;
       }
       
-      return {
-        date: new Date(t.occurredAt).toLocaleDateString(),
-        type: t.type,
-        description: description,
-        amount: t.amount
-      };
-    });
-  }, [data]);
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const objUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(objUrl);
+      } else {
+        alert('Failed to download report');
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Error downloading report');
+    }
+  };
 
   return (
-    <div className="p-6 space-y-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen">
-      <div className="flex items-center justify-between p-6 bg-gradient-to-r from-slate-800/40 to-slate-900/30 border border-slate-700/50 rounded-2xl shadow-2xl">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent flex items-center gap-3">
-            <span className="text-4xl">📊</span>
-            Business Reports
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">Comprehensive analytics and insights 📈</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={fetchData}
-            className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-sm font-semibold rounded-xl transition-all duration-200 flex items-center gap-2 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-105"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            Refresh
-          </button>
-          <button className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white text-sm font-semibold rounded-xl transition-all duration-200 flex items-center gap-2 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-105">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-            Export Report
-          </button>
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white px-6 py-8 shadow-lg">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl md:text-4xl font-bold mb-2">Business Reports</h1>
+          <p className="text-purple-100 text-sm md:text-base">Comprehensive analytics and insights</p>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard label="Total Sales" value={formatCurrency(stats.sales)} color="emerald" gradient icon="💰" />
-        <StatsCard label="Total Expenses" value={formatCurrency(stats.expenses)} color="red" gradient icon="💸" />
-        <StatsCard label="Net Profit" value={formatCurrency(stats.profit)} color={stats.profit >= 0 ? 'blue' : 'amber'} gradient icon="📈" />
-        <StatsCard label="Outstanding Debt" value={formatCurrency(stats.debt)} color="purple" gradient icon="💳" />
-      </div>
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 space-y-8">
+        {/* Controls */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            {/* Period Selector */}
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Period:</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPeriod('all')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                    period === 'all'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  All Time
+                </button>
+                <button
+                  onClick={() => setPeriod('month')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                    period === 'month'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  Monthly
+                </button>
+              </div>
+              {period === 'month' && (
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Debts Summary */}
-        <Card variant="glass" title="Debts & Loans" icon="💳">
-          {debts.length > 0 ? (
-            <div className="space-y-3">
-              {debts.map((debt, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                      <span className="text-lg">💳</span>
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={fetchData}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition shadow-md hover:shadow-lg"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+              <button 
+                onClick={() => handleDownload('csv')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition shadow-md hover:shadow-lg"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                CSV Report
+              </button>
+              <button 
+                onClick={() => handleDownload('ai')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition shadow-md hover:shadow-lg"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                AI Report (PDF)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent"></div>
+          </div>
+        ) : (
+          <>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { 
+                  label: 'Total Sales', 
+                  value: stats.sales, 
+                  change: '+12.5%',
+                  color: 'from-green-500 to-emerald-600',
+                  icon: '💰'
+                },
+                { 
+                  label: 'Total Expenses', 
+                  value: stats.expenses, 
+                  change: '-5.2%',
+                  color: 'from-red-500 to-pink-600',
+                  icon: '💸'
+                },
+                { 
+                  label: 'Net Profit', 
+                  value: stats.profit, 
+                  change: stats.profit >= 0 ? '+' : '-',
+                  color: 'from-blue-500 to-indigo-600',
+                  icon: '📈'
+                },
+                { 
+                  label: 'Outstanding Debts', 
+                  value: stats.debt, 
+                  change: '',
+                  color: 'from-orange-500 to-yellow-600',
+                  icon: '💳'
+                }
+              ].map((stat, index) => (
+                <div key={index} className="bg-white dark:bg-slate-800 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
+                  <div className={`bg-gradient-to-r ${stat.color} p-6 text-white`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold opacity-90 uppercase tracking-wide">{stat.label}</p>
+                      <span className="text-3xl group-hover:scale-110 transition-transform duration-300">{stat.icon}</span>
                     </div>
-                    <div>
-                      <p className="text-white text-sm font-medium">{debt.lender}</p>
-                      <p className="text-slate-400 text-xs">{debt.date}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-purple-400 font-semibold text-sm">{formatCurrency(debt.amount)}</p>
-                    <Badge variant={debt.status === 'unpaid' ? 'danger' : 'warning'} size="small">{debt.status}</Badge>
+                    <p className="text-3xl font-bold">
+                      KSh {stat.value.toLocaleString()}
+                    </p>
                   </div>
                 </div>
               ))}
-              <div className="pt-3 border-t border-slate-700/50">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-sm">Total Outstanding</span>
-                  <span className="text-white font-bold text-lg">{formatCurrency(stats.debt)}</span>
-                </div>
-              </div>
             </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-slate-500 text-sm">No outstanding debts</p>
-            </div>
-          )}
-        </Card>
 
-        {/* Top Selling Items */}
-        <Card variant="glass" title="Top Selling Items" icon="🏆">
-          {topItems.length > 0 ? (
-            <div className="space-y-3">
-              {topItems.map((item, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                      <span className="text-sm font-bold text-emerald-400">#{i + 1}</span>
+            {/* Charts and Analytics */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Top Selling Items */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-700">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Top Selling Products</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Best performers by revenue</p>
+                </div>
+                <div className="p-6">
+                  {topItems.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="text-4xl">📦</span>
+                      </div>
+                      <p className="text-gray-500 dark:text-gray-400">No sales data available</p>
                     </div>
-                    <span className="text-white text-sm font-medium">{item.name}</span>
-                  </div>
-                  <span className="text-emerald-400 font-semibold text-sm">{formatCurrency(item.total)}</span>
+                  ) : (
+                    <div className="space-y-4">
+                      {topItems.map((item, i) => (
+                        <div key={i} className="flex items-center gap-4">
+                          <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                            #{i + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{item.quantity} units sold</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-green-600 dark:text-green-400">{formatCurrency(item.total)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-slate-500 text-sm">No sales data available</p>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Expenses Breakdown */}
-      <Card variant="glass" title="Expenses Breakdown" icon="📊">
-        {expenses.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {expenses.map((exp, i) => (
-              <div key={i}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-white text-sm font-medium">{exp.category}</span>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="danger" size="small">{exp.percent.toFixed(1)}%</Badge>
-                    <span className="text-white font-semibold text-sm">{formatCurrency(exp.amount)}</span>
-                  </div>
-                </div>
-                <ProgressBar value={exp.percent} max={100} color="red" />
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-slate-500 text-sm">No expenses recorded</p>
-          </div>
-        )}
-      </Card>
 
-      {/* Recent Transactions Table */}
-      <Card variant="glass" title="Recent Transactions" icon="📋">
-        {recentTxs.length > 0 ? (
-          <DataTable
-            columns={[
-              { header: 'Date', key: 'date' },
-              { 
-                header: 'Type', 
-                key: 'type',
-                render: (row) => (
-                  <Badge 
-                    variant={row.type === 'income' ? 'success' : row.type === 'expense' ? 'danger' : 'warning'}
-                    size="small"
-                  >
-                    {row.type}
-                  </Badge>
-                )
-              },
-              { header: 'Description', key: 'description' },
-              { 
-                header: 'Amount', 
-                key: 'amount',
-                align: 'right',
-                render: (row) => (
-                  <span className={`font-semibold ${row.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {row.type === 'income' ? '+' : '-'}{formatCurrency(row.amount)}
-                  </span>
-                )
-              }
-            ]}
-            data={recentTxs}
-          />
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-slate-500 text-sm">No transactions found</p>
-          </div>
+              {/* Expense Breakdown */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gradient-to-r from-red-50 to-pink-50 dark:from-slate-700 dark:to-slate-700">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Expense Breakdown</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Where your money goes</p>
+                </div>
+                <div className="p-6">
+                  {expenses.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="text-4xl">📝</span>
+                      </div>
+                      <p className="text-gray-500 dark:text-gray-400">No expense data available</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {expenses.map((exp, i) => (
+                        <div key={i} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="font-medium text-gray-900 dark:text-white text-sm">{exp.category}</p>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{exp.percent.toFixed(1)}%</span>
+                              <span className="font-bold text-red-600 dark:text-red-400 text-sm">{formatCurrency(exp.amount)}</span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-red-500 to-pink-600 h-full rounded-full transition-all duration-500"
+                              style={{ width: `${exp.percent}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
         )}
-      </Card>
-
-      {/* Insights */}
-      <Card variant="glass" title="Business Insights">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3">
-              <span className="text-xl">💰</span>
-            </div>
-            <h4 className="text-sm font-semibold text-white mb-1">Revenue</h4>
-            <p className="text-xs text-slate-400">
-              {stats.sales > 0 ? `You've generated ${formatCurrency(stats.sales)} in sales` : 'Start recording sales to see insights'}
-            </p>
-          </div>
-          <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3">
-              <span className="text-xl">📊</span>
-            </div>
-            <h4 className="text-sm font-semibold text-white mb-1">Profit Margin</h4>
-            <p className="text-xs text-slate-400">
-              {stats.sales > 0 
-                ? `${((stats.profit / stats.sales) * 100).toFixed(1)}% profit margin` 
-                : 'Track sales and expenses to calculate'}
-            </p>
-          </div>
-          <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-            <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mb-3">
-              <span className="text-xl">💳</span>
-            </div>
-            <h4 className="text-sm font-semibold text-white mb-1">Debt Status</h4>
-            <p className="text-xs text-slate-400">
-              {stats.debt > 0 
-                ? `${formatCurrency(stats.debt)} in outstanding debt` 
-                : 'No outstanding debts'}
-            </p>
-          </div>
-        </div>
-      </Card>
+      </div>
     </div>
   );
 };

@@ -28,4 +28,12 @@ dist-ssr
 .env.*
 backend/.env
 frontend/.env
+backend/.env.*
+frontend/.env.*
+
+# User uploads (avatars, voice recordings - stored in Cloudinary)
+backend/uploads/avatars/*
+backend/uploads/voice/*
+!backend/uploads/avatars/.gitkeep
+!backend/uploads/voice/.gitkeep
 

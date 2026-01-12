@@ -1,56 +1,38 @@
-import { Router } from 'express';
-import { authMiddleware } from '../middleware/auth.js';
-import multer from 'multer';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import ChatMessage from '../models/ChatMessage.js';
-import Transaction from '../models/Transaction.js';
-import Item from '../models/Item.js';
-import Debt from '../models/Debt.js';
-import Customer from '../models/Customer.js';
-import { extractKeywords, buildContextFromKeywords } from '../services/keywordExtractor.js';
-import { getLLMResponse, transcribeAudio } from '../services/llmService.js';
-import { extractTransactionData, detectLanguage, generateConfirmation } from '../services/transactionExtractor.js';
-import { v4 as uuidv4 } from 'uuid';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { Router } from "express";
+import { authMiddleware } from "../middleware/auth.js";
+import { voiceUpload } from "../middleware/upload.js";
+import ChatMessage from "../models/ChatMessage.js";
+import Transaction from "../models/Transaction.js";
+import Item from "../models/Item.js";
+import Debt from "../models/Debt.js";
+import Customer from "../models/Customer.js";
+import {
+  extractKeywords,
+  buildContextFromKeywords,
+} from "../services/keywordExtractor.js";
+import {
+  getLLMResponse,
+  transcribeAudio,
+  synthesizeSpeech,
+} from "../services/llmService.js";
+import {
+  extractTransactionData,
+  detectLanguage,
+  generateConfirmation,
+} from "../services/transactionExtractor.js";
+import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
 
-// Configure multer for voice message uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads/voice'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'voice-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/ogg'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid audio format'));
-    }
-  }
-});
-
 // Text message endpoint
-router.post('/message', authMiddleware, async (req, res, next) => {
+router.post("/message", authMiddleware, async (req, res, next) => {
   const startTime = Date.now();
-  
+
   try {
     const { text, conversationId } = req.body || {};
-    
+
     if (!text || !text.trim()) {
-      return res.status(400).json({ error: 'Message text is required' });
+      return res.status(400).json({ error: "Message text is required" });
     }
 
     const userMessage = text.trim();
@@ -59,55 +41,65 @@ router.post('/message', authMiddleware, async (req, res, next) => {
 
     // 1. Detect language
     const language = detectLanguage(userMessage);
-    
+
     // 2. Extract keywords from user message (legacy support)
     const keywords = extractKeywords(userMessage);
-    
+
     // 3. NEW: Use advanced LLM extraction for structured data
     const extractedData = await extractTransactionData(userMessage, language);
-    
+
     // 4. Get conversation history for context
     const recentMessages = await ChatMessage.find({
       userId,
-      conversationId: convId
+      conversationId: convId,
     })
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .lean();
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
 
     // 5. Generate confirmation message
-    let aiReply = '';
+    let aiReply = "";
     let createdRecord = null;
-    
+
     // Process transaction based on extracted data
     if (extractedData.transactionType && extractedData.totalAmount > 0) {
       // Create transaction with items
       const transactionData = {
         userId,
-        type: extractedData.transactionType === 'sale' ? 'income' : 
-              extractedData.transactionType === 'purchase' ? 'expense' : extractedData.transactionType,
+        type:
+          extractedData.transactionType === "sale"
+            ? "income"
+            : extractedData.transactionType === "purchase"
+            ? "expense"
+            : extractedData.transactionType,
         amount: extractedData.totalAmount,
         items: extractedData.items,
         conversationText: userMessage,
         extractedData: extractedData,
-        occurredAt: extractedData.date ? new Date(extractedData.date) : new Date(),
-        status: (extractedData.transactionType === 'debt' || extractedData.transactionType === 'loan') ? 'unpaid' : (extractedData.paymentStatus || 'paid')
+        occurredAt: extractedData.date
+          ? new Date(extractedData.date)
+          : new Date(),
+        status:
+          extractedData.transactionType === "debt" ||
+          extractedData.transactionType === "loan"
+            ? "unpaid"
+            : extractedData.paymentStatus || "paid",
       };
 
       // Handle customer if mentioned
       if (extractedData.customerName) {
-        let customer = await Customer.findOne({ 
-          userId, 
-          name: extractedData.customerName 
+        let customer = await Customer.findOne({
+          userId,
+          name: extractedData.customerName,
         });
-        
+
         if (!customer) {
-          customer = await Customer.create({ 
-            userId, 
-            name: extractedData.customerName 
+          customer = await Customer.create({
+            userId,
+            name: extractedData.customerName,
           });
         }
-        
+
         transactionData.customerId = customer._id;
         transactionData.customerName = extractedData.customerName;
       }
@@ -116,20 +108,22 @@ router.post('/message', authMiddleware, async (req, res, next) => {
       for (const item of extractedData.items) {
         let inventoryItem = await Item.findOne({
           userId,
-          name: item.name
+          name: item.name,
         });
-        
+
         if (!inventoryItem) {
           inventoryItem = await Item.create({
             userId,
             name: item.name,
             unit: item.unit,
-            price: item.unitPrice
+            price: item.unitPrice,
           });
         }
-        
+
         // Link item to transaction
-        const itemIndex = transactionData.items.findIndex(i => i.name === item.name);
+        const itemIndex = transactionData.items.findIndex(
+          (i) => i.name === item.name
+        );
         if (itemIndex >= 0) {
           transactionData.items[itemIndex].itemId = inventoryItem._id;
         }
@@ -137,45 +131,81 @@ router.post('/message', authMiddleware, async (req, res, next) => {
 
       // Save transaction
       const transaction = await Transaction.create(transactionData);
-      
+
       createdRecord = {
-        type: 'transaction',
+        type: "transaction",
         recordType: transactionData.type,
-        recordId: transaction._id
+        recordId: transaction._id,
       };
 
       // Generate confirmation
       aiReply = generateConfirmation(extractedData, language);
-      
-      const io = req.app.get('io');
+
+      const io = req.app.get("io");
       if (io) {
-        io.to(`user:${userId}`).emit('transaction:created', {
+        io.to(`user:${userId}`).emit("transaction:created", {
           transaction,
           items: extractedData.items,
-          type: transactionData.type
+          type: transactionData.type,
         });
       }
     } else {
-      // No transaction detected, use conversational AI
-      const conversationalPrompt = language === 'sw' 
-        ? `You are SokoTally, a friendly business assistant for vegetable vendors in Kenya. Respond in Kiswahili. Help users understand the app features:
+      // No transaction detected, use conversational AI with enhanced intelligence
+      const conversationalPrompt =
+        language === "sw"
+          ? `Wewe ni SokoTally, msaidizi hodari wa biashara kwa wauzaji mbogamboga nchini Kenya.
 
-- Record sales, expenses, debts automatically from natural language
-- Track inventory and customers
+MHIMU SANA: Jibu DAIMA kwa Kiswahili pekee. Usitumie Kiingereza kabisa. Hata kama mtumiaji anachanganya lugha, wewe jibu kwa Kiswahili tu.
+
+UTENDAJI WAKO:
+1. KUSIKIZA: Elewa mazungumzo ya mtumiaji kwa makini
+2. KUELEWA: Tambua nia ya mtumiaji na data ya kibiashara
+3. KUHAKIKISHA: Uliza maswali kabla ya kurekodi data
+4. KUREKODI: Hifadhi miamala kwa usahihi
+5. KUKUMBUKA: Tumia historia ya miamala katika majibu
+6. KUCHANGANUA: Toa maarifa ya kibiashara
+
+Unaweza kusaidia:
+- Kurekodi mauzo, matumizi, mikopo kwa lugha ya kawaida
+- Kufuatilia bidhaa na wateja
+- Kuona ripoti za fedha na takwimu
+- Kutoa ushauri wa kibiashara
+
+Kuwa rafiki, mkakamavu na msaidizi. Hakikisha kila unaelewa vizuri kabla ya kurekodi. Jibu kwa Kiswahili tu.`
+          : `You are SokoTally, an intelligent business assistant for small shop owners in Kenya.
+
+CRITICAL: Respond ONLY in English. The user has sent an English message, so you MUST reply in English only. Do NOT use Kiswahili at all.
+
+YOUR CAPABILITIES (ChatGPT-style):
+1. LISTEN: Understand user's natural speech with context
+2. COMPREHEND: Extract transactional intent and entities
+3. VALIDATE: Confirm details before recording (e.g., "You sold 5 packets of sugar for 200 KES each, total 1,000 KES. Correct?")
+4. RECORD: Store accurate, timestamped transaction events
+5. REMEMBER: Maintain conversation state and business history
+6. ANALYZE: Provide real-time business insights
+
+You can help users:
+- Record sales, expenses, and loans using natural language
+- Track inventory items and customers
 - View financial reports and analytics
-- Chat in both English and Kiswahili
+- Provide business insights: "You've made 7 sales today totaling 8,400 KES"
+- Answer questions about their business performance
 
-Be helpful, friendly, and explain SokoTally's features when asked. If the user greets you, greet back warmly.`
-        : `You are SokoTally, a friendly business assistant for vegetable vendors in Kenya. Respond in English. Help users understand the app features:
+ALWAYS:
+- Use clarifying questions when uncertain
+- Confirm transactions before recording
+- Provide running totals and summaries
+- Be conversational, accurate, and helpful
+- Remember context from previous messages
+- Respond in English only since the user wrote in English
 
-- Record sales, expenses, debts automatically from natural language
-- Track inventory and customers  
-- View financial reports and analytics
-- Chat in both English and Kiswahili
+Think like a conversational accountant who listens, understands, verifies, records, remembers, analyzes, and speaks back - all in English.`;
 
-Be helpful, friendly, and explain SokoTally's features when asked. If the user greets you, greet back warmly.`;
-      
-      const llmResult = await getLLMResponse(userMessage, conversationalPrompt, recentMessages.reverse());
+      const llmResult = await getLLMResponse(
+        userMessage,
+        conversationalPrompt,
+        recentMessages.reverse()
+      );
       aiReply = llmResult.reply;
     }
 
@@ -184,14 +214,14 @@ Be helpful, friendly, and explain SokoTally's features when asked. If the user g
       userId,
       conversationId: convId,
       message: userMessage,
-      sender: 'user',
-      messageType: 'text',
-      extractedKeywords: keywords.categories.map(cat => ({
+      sender: "user",
+      messageType: "text",
+      extractedKeywords: keywords.categories.map((cat) => ({
         keyword: cat,
         category: cat,
-        value: null
+        value: null,
       })),
-      processedData: extractedData
+      processedData: extractedData,
     });
     await userChatMessage.save();
 
@@ -200,185 +230,213 @@ Be helpful, friendly, and explain SokoTally's features when asked. If the user g
       userId,
       conversationId: convId,
       message: aiReply,
-      sender: 'ai',
-      messageType: 'text',
+      sender: "ai",
+      messageType: "text",
       processedData: extractedData,
       createdRecord,
       metadata: {
-        model: process.env.LLM_PROVIDER || 'transactionExtractor',
+        model: process.env.LLM_PROVIDER || "transactionExtractor",
         processingTime: Date.now() - startTime,
         language: language,
-        confidence: extractedData.confidence
-      }
+        confidence: extractedData.confidence,
+      },
     });
     await aiChatMessage.save();
 
-    res.json({ 
+    res.json({
       reply: aiReply,
       conversationId: convId,
       createdRecord,
       extractedData,
       language,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-    
   } catch (error) {
     next(error);
   }
 });
 
 // Voice message endpoint
-router.post('/voice', authMiddleware, upload.single('audio'), async (req, res, next) => {
-  const startTime = Date.now();
-  
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Audio file is required' });
-    }
+router.post(
+  "/voice",
+  authMiddleware,
+  voiceUpload.single("audio"),
+  async (req, res, next) => {
+    const startTime = Date.now();
 
-    const { conversationId } = req.body || {};
-    const convId = conversationId || uuidv4();
-    const userId = req.userId;
-    const audioUrl = `/uploads/voice/${req.file.filename}`;
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Audio file is required" });
+      }
 
-    // 1. Transcribe audio to text
-    const transcriptionResult = await transcribeAudio(req.file.path);
-    const transcribedText = transcriptionResult.text;
+      const { conversationId } = req.body || {};
+      const convId = conversationId || uuidv4();
+      const userId = req.userId;
 
-    // 2. Detect language (English, Kiswahili, or mixed)
-    const language = detectLanguage(transcribedText);
-    
-    // 3. Use ADVANCED AI extraction for structured data
-    const extractedData = await extractTransactionData(transcribedText, language);
-    
-    // 4. Get conversation history for context
-    const recentMessages = await ChatMessage.find({
-      userId,
-      conversationId: convId
-    })
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .lean();
+      // Cloudinary returns the secure URL in req.file.path
+      const audioUrl = req.file.path;
 
-    // 5. Generate AI confirmation message
-    let aiReply = '';
-    let createdRecord = null;
-    
-    // Process transaction if data was extracted
-    if (extractedData.transactionType && extractedData.totalAmount > 0) {
-      // Create transaction with items
-      const transactionData = {
+      // 1. Transcribe audio to text (Cloudinary URL can be used directly)
+      const transcriptionResult = await transcribeAudio(audioUrl);
+      const transcribedText = transcriptionResult.text;
+
+      // 2. Detect language (English, Kiswahili, or mixed)
+      const language = detectLanguage(transcribedText);
+
+      // 3. Use ADVANCED AI extraction for structured data
+      const extractedData = await extractTransactionData(
+        transcribedText,
+        language
+      );
+
+      // 4. Get conversation history for context
+      const recentMessages = await ChatMessage.find({
         userId,
-        type: extractedData.transactionType === 'sale' ? 'income' : 
-              extractedData.transactionType === 'purchase' ? 'expense' : extractedData.transactionType,
-        amount: extractedData.totalAmount,
-        items: extractedData.items,
-        conversationText: transcribedText,
-        extractedData: extractedData,
-        occurredAt: extractedData.date ? new Date(extractedData.date) : new Date(),
-        status: 'paid'
-      };
+        conversationId: convId,
+      })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean();
 
-      // Handle customer if mentioned
-      if (extractedData.customerName) {
-        let customer = await Customer.findOne({ 
-          userId, 
-          name: { $regex: new RegExp(`^${extractedData.customerName}$`, 'i') }
-        });
-        
-        if (!customer) {
-          customer = await Customer.create({
+      // 5. Generate AI confirmation message
+      let aiReply = "";
+      let createdRecord = null;
+
+      // Process transaction if data was extracted
+      if (extractedData.transactionType && extractedData.totalAmount > 0) {
+        // Create transaction with items
+        const transactionData = {
+          userId,
+          type:
+            extractedData.transactionType === "sale"
+              ? "income"
+              : extractedData.transactionType === "purchase"
+              ? "expense"
+              : extractedData.transactionType,
+          amount: extractedData.totalAmount,
+          items: extractedData.items,
+          conversationText: transcribedText,
+          extractedData: extractedData,
+          occurredAt: extractedData.date
+            ? new Date(extractedData.date)
+            : new Date(),
+          status: "paid",
+        };
+
+        // Handle customer if mentioned
+        if (extractedData.customerName) {
+          let customer = await Customer.findOne({
             userId,
-            name: extractedData.customerName,
-            createdAt: new Date()
+            name: {
+              $regex: new RegExp(`^${extractedData.customerName}$`, "i"),
+            },
+          });
+
+          if (!customer) {
+            customer = await Customer.create({
+              userId,
+              name: extractedData.customerName,
+              createdAt: new Date(),
+            });
+          }
+
+          transactionData.customerId = customer._id;
+        }
+
+        // Create transaction
+        const transaction = await Transaction.create(transactionData);
+
+        createdRecord = {
+          type: "transaction",
+          recordType: transactionData.type,
+          recordId: transaction._id,
+          items: extractedData.items,
+        };
+
+        // Emit Socket.IO event for real-time dashboard update
+        const io = req.app.get("io");
+        if (io) {
+          io.to(`user-${userId}`).emit("transaction:created", {
+            transaction,
+            items: extractedData.items,
+            type: transactionData.type,
           });
         }
-        
-        transactionData.customerId = customer._id;
+
+        // Generate confirmation in appropriate language
+        aiReply = generateConfirmation(extractedData, language);
+      } else {
+        // No transaction detected - have a conversation with language-aware system prompt
+        const keywords = extractKeywords(transcribedText);
+        let systemPrompt = buildContextFromKeywords(keywords);
+
+        // Add language-specific instruction
+        if (language === "sw") {
+          systemPrompt = `${systemPrompt}\n\nMHIMU SANA: Jibu DAIMA kwa Kiswahili pekee. Usitumie Kiingereza hata kidogo. Mtumiaji ameongea Kiswahili, basi jibu kwa Kiswahili kamili tu.`;
+        } else {
+          systemPrompt = `${systemPrompt}\n\nCRITICAL: Respond ONLY in English. The user spoke in English, so reply in English only. Do NOT use Kiswahili at all.`;
+        }
+
+        const llmResult = await getLLMResponse(
+          transcribedText,
+          systemPrompt,
+          recentMessages.reverse()
+        );
+        aiReply = llmResult.reply;
       }
 
-      // Create transaction
-      const transaction = await Transaction.create(transactionData);
-      
-      createdRecord = {
-        type: 'transaction',
-        recordType: transactionData.type,
-        recordId: transaction._id,
-        items: extractedData.items
-      };
+      // 6. Save user voice message
+      const userChatMessage = new ChatMessage({
+        userId,
+        conversationId: convId,
+        message: transcribedText,
+        sender: "user",
+        messageType: "voice",
+        audioUrl,
+        transcription: transcribedText,
+        extractedKeywords:
+          extractedData.items?.map((item) => ({
+            keyword: item.name,
+            category: extractedData.transactionType,
+            value: item.totalPrice,
+          })) || [],
+      });
+      await userChatMessage.save();
 
-      // Emit Socket.IO event for real-time dashboard update
-      const io = req.app.get('io');
-      if (io) {
-        io.to(`user-${userId}`).emit('transaction:created', {
-          transaction,
-          items: extractedData.items,
-          type: transactionData.type
-        });
-      }
+      // 7. Save AI response
+      const aiChatMessage = new ChatMessage({
+        userId,
+        conversationId: convId,
+        message: aiReply,
+        sender: "ai",
+        messageType: "text",
+        processedData: extractedData,
+        createdRecord,
+        metadata: {
+          language: language,
+          processingTime: Date.now() - startTime,
+        },
+      });
+      await aiChatMessage.save();
 
-      // Generate confirmation in appropriate language
-      aiReply = generateConfirmation(extractedData, language);
-      
-    } else {
-      // No transaction detected - have a conversation
-      const keywords = extractKeywords(transcribedText);
-      const systemPrompt = buildContextFromKeywords(keywords);
-      const llmResult = await getLLMResponse(transcribedText, systemPrompt, recentMessages.reverse());
-      aiReply = llmResult.reply;
+      res.json({
+        reply: aiReply,
+        transcription: transcribedText,
+        conversationId: convId,
+        createdRecord,
+        extractedData,
+        language,
+        audioUrl,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
     }
-
-    // 6. Save user voice message
-    const userChatMessage = new ChatMessage({
-      userId,
-      conversationId: convId,
-      message: transcribedText,
-      sender: 'user',
-      messageType: 'voice',
-      audioUrl,
-      transcription: transcribedText,
-      extractedKeywords: extractedData.items?.map(item => ({
-        keyword: item.name,
-        category: extractedData.transactionType,
-        value: item.totalPrice
-      })) || []
-    });
-    await userChatMessage.save();
-
-    // 7. Save AI response
-    const aiChatMessage = new ChatMessage({
-      userId,
-      conversationId: convId,
-      message: aiReply,
-      sender: 'ai',
-      messageType: 'text',
-      processedData: extractedData,
-      createdRecord,
-      metadata: {
-        language: language,
-        processingTime: Date.now() - startTime
-      }
-    });
-    await aiChatMessage.save();
-
-    res.json({
-      reply: aiReply,
-      transcription: transcribedText,
-      conversationId: convId,
-      createdRecord,
-      extractedData,
-      language,
-      audioUrl,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    next(error);
   }
-});
+);
 
 // Get chat history
-router.get('/history', authMiddleware, async (req, res, next) => {
+router.get("/history", authMiddleware, async (req, res, next) => {
   try {
     const { conversationId, limit = 50 } = req.query;
     const userId = req.userId;
@@ -395,7 +453,7 @@ router.get('/history', authMiddleware, async (req, res, next) => {
 
     res.json({
       messages: messages.reverse(),
-      total: messages.length
+      total: messages.length,
     });
   } catch (error) {
     next(error);
@@ -403,76 +461,128 @@ router.get('/history', authMiddleware, async (req, res, next) => {
 });
 
 // Get all conversations
-router.get('/conversations', authMiddleware, async (req, res, next) => {
+router.get("/conversations", authMiddleware, async (req, res, next) => {
   try {
     const userId = req.userId;
-    const mongoose = await import('mongoose');
+    const mongoose = await import("mongoose");
 
     // Get unique conversations with latest message
     const conversations = await ChatMessage.aggregate([
-      { $match: { userId: mongoose.default.Types.ObjectId.isValid(userId) 
-          ? new mongoose.default.Types.ObjectId(userId) 
-          : userId 
-      }},
+      {
+        $match: {
+          userId: mongoose.default.Types.ObjectId.isValid(userId)
+            ? new mongoose.default.Types.ObjectId(userId)
+            : userId,
+        },
+      },
       { $sort: { createdAt: -1 } },
-      { $group: {
-        _id: '$conversationId',
-        lastMessageAt: { $first: '$createdAt' },
-        firstMessage: { $last: '$message' },
-        messageCount: { $sum: 1 }
-      }},
-      { $project: {
-        _id: 1,
-        title: { $substr: ['$firstMessage', 0, 50] },
-        lastMessageAt: 1,
-        messageCount: 1,
-        createdAt: '$lastMessageAt'
-      }},
+      {
+        $group: {
+          _id: "$conversationId",
+          lastMessageAt: { $first: "$createdAt" },
+          firstMessage: { $last: "$message" },
+          messageCount: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          title: { $substr: ["$firstMessage", 0, 50] },
+          lastMessageAt: 1,
+          messageCount: 1,
+          createdAt: "$lastMessageAt",
+        },
+      },
       { $sort: { lastMessageAt: -1 } },
-      { $limit: 50 }
+      { $limit: 50 },
     ]);
 
     res.json({ conversations });
   } catch (error) {
-    console.error('Error fetching conversations:', error);
+    console.error("Error fetching conversations:", error);
     next(error);
   }
 });
 
 // Get messages for a specific conversation
-router.get('/conversations/:conversationId', authMiddleware, async (req, res, next) => {
-  try {
-    const userId = req.userId;
-    const { conversationId } = req.params;
+router.get(
+  "/conversations/:conversationId",
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const userId = req.userId;
+      const { conversationId } = req.params;
 
-    const messages = await ChatMessage.find({
-      userId,
-      conversationId
-    }).sort({ createdAt: 1 }).lean();
+      const messages = await ChatMessage.find({
+        userId,
+        conversationId,
+      })
+        .sort({ createdAt: 1 })
+        .lean();
 
-    res.json({ messages, conversationId });
-  } catch (error) {
-    next(error);
+      res.json({ messages, conversationId });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 // Delete a conversation
-router.delete('/conversations/:conversationId', authMiddleware, async (req, res, next) => {
+router.delete(
+  "/conversations/:conversationId",
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const userId = req.userId;
+      const { conversationId } = req.params;
+
+      await ChatMessage.deleteMany({
+        userId,
+        conversationId,
+      });
+
+      res.json({ success: true, message: "Conversation deleted" });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// TTS endpoint - Convert text to speech
+router.post("/tts", authMiddleware, async (req, res, next) => {
   try {
-    const userId = req.userId;
-    const { conversationId } = req.params;
+    const { text, voice } = req.body;
 
-    await ChatMessage.deleteMany({
-      userId,
-      conversationId
-    });
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Text is required for TTS" });
+    }
 
-    res.json({ success: true, message: 'Conversation deleted' });
+    // Limit text length for TTS
+    const textToSpeak = text.trim().slice(0, 4096);
+
+    const { audio, contentType } = await synthesizeSpeech(
+      textToSpeak,
+      voice || "alloy"
+    );
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", audio.length);
+    res.send(audio);
   } catch (error) {
-    next(error);
+    console.error("TTS endpoint error:", error);
+    if (
+      error.message.includes("requires") ||
+      error.message.includes("not yet available")
+    ) {
+      res.status(501).json({
+        error: "TTS not configured",
+        message: error.message,
+        fallback: "client-side",
+      });
+    } else {
+      next(error);
+    }
   }
 });
 
 export default router;
-
-

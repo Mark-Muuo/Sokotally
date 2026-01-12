@@ -179,3 +179,40 @@ export async function transcribeAudio(audioPath) {
     throw error;
   }
 }
+
+/**
+ * Text-to-Speech synthesis
+ * Converts text to audio using configured TTS provider
+ */
+export async function synthesizeSpeech(text, voice = 'alloy') {
+  const provider = process.env.TTS_PROVIDER || 'openai';
+  
+  try {
+    if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+      const { default: OpenAI } = await import('openai');
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const mp3 = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: voice, // alloy, echo, fable, onyx, nova, shimmer
+        input: text,
+        speed: 1.0
+      });
+
+      // Return buffer for streaming
+      const buffer = Buffer.from(await mp3.arrayBuffer());
+      return {
+        audio: buffer,
+        contentType: 'audio/mpeg'
+      };
+    } else if (provider === 'groq' && process.env.GROQ_API_KEY) {
+      // Groq doesn't have native TTS yet, fallback to client-side or return error
+      throw new Error('Groq TTS not yet available. Use client-side TTS or configure OpenAI.');
+    } else {
+      throw new Error('TTS requires OPENAI_API_KEY configuration. Set TTS_PROVIDER=openai');
+    }
+  } catch (error) {
+    console.error('TTS error:', error);
+    throw error;
+  }
+}

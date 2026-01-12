@@ -22,8 +22,8 @@ const Badge = ({
   };
 
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full font-medium ${variantClasses[variant]} ${sizeClasses[size]} ${pulse ? 'animate-pulse' : ''}`}>
-      {pulse && <span className="w-1.5 h-1.5 rounded-full bg-current"></span>}
+    <span className={`inline-flex items-center gap-1.5 font-medium ${variantClasses[variant]} ${sizeClasses[size]} ${pulse ? 'animate-pulse' : ''}`}>
+      {pulse && <span className="w-1.5 h-1.5 bg-current"></span>}
       {children}
     </span>
   );

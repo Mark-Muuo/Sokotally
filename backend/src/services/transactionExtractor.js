@@ -37,32 +37,51 @@ export async function extractTransactionData(userMessage, language = 'en') {
  * Build extraction prompt based on language
  */
 function buildExtractionPrompt(language) {
-  const basePrompt = `You are a transaction data extractor for a bookkeeping system.
-Extract structured data from the user's message and return ONLY a JSON object.
+  const basePrompt = `You are an AI transaction extractor for SokoTally bookkeeping system.
+You must extract structured business transaction data with high accuracy.
 
-Extract:
-1. transactionType: "sale", "purchase", "expense", or "debt"
+CRITICAL: Return ONLY valid JSON. No markdown, no explanations, just JSON.
+
+Extract these fields:
+1. transactionType: "sale", "purchase", "expense", "debt", or "loan"
 2. items: array of { name, quantity, unit, unitPrice }
-3. totalAmount: total transaction amount
-4. customerName: customer name if mentioned
+   - Calculate unitPrice = totalAmount / quantity if not explicitly stated
+   - Normalize item names to lowercase
+3. totalAmount: total transaction value (calculate if needed)
+4. customerName: customer/supplier name if mentioned
 5. date: date if mentioned (format: YYYY-MM-DD) or null for today
-6. notes: any additional context
-7. paymentStatus: "paid" or "unpaid" (default to "paid" for sales/expenses, "unpaid" for debt/loans)
+6. notes: any additional context or description
+7. paymentStatus: "paid" or "unpaid"
+   - Default "paid" for sales/expenses/purchases
+   - Default "unpaid" for loans
 
-Example Input: "I sold 5kg tomatoes for 500 shillings to John"
-Example Output:
+Transaction Type Rules:
+- "sale" or "income": Customer buys from you (money IN)
+- "purchase" or "expense": You buy supplies or pay costs (money OUT)
+- "debt" or "loan": Someone borrowed money from you (money lent out, receivable)
+- Interpret "deni" or "mkopo" in Swahili as loan/debt
+
+Examples:
+
+Input: "I sold 5kg tomatoes for 500 shillings to John"
+Output:
 {
   "transactionType": "sale",
-  "items": [
-    {
-      "name": "tomatoes",
-      "quantity": 5,
-      "unit": "kg",
-      "unitPrice": 100
-    }
-  ],
+  "items": [{"name": "tomatoes", "quantity": 5, "unit": "kg", "unitPrice": 100}],
   "totalAmount": 500,
   "customerName": "John",
+  "date": null,
+  "notes": null,
+  "paymentStatus": "paid"
+}
+
+Input: "Bought 10 packets of sugar at 50 each"
+Output:
+{
+  "transactionType": "purchase",
+  "items": [{"name": "sugar", "quantity": 10, "unit": "packets", "unitPrice": 50}],
+  "totalAmount": 500,
+  "customerName": null,
   "date": null,
   "notes": null,
   "paymentStatus": "paid"
@@ -72,6 +91,8 @@ Example Output:
 
 Note: Input may be in Kiswahili. Common words:
 - "nimeuza" = sold, "nilinunua" = bought
+- "mkopo" or "nimemkopesha" = gave a loan to someone (money lent out)
+- "deni" or "madeni" = debt/loan (someone borrowed from you)
 - "kilo" = kg, "shilingi" = shillings
 - "nyanya" = tomatoes, "vitunguu" = onions
 - "leo" = today, "jana" = yesterday` : '';
@@ -237,7 +258,7 @@ function extractItemName(text) {
  * Detect language from text
  */
 export function detectLanguage(text) {
-  const swahiliKeywords = ['nimeuza', 'nilinunua', 'shilingi', 'kilo', 'leo', 'jana', 'nyanya', 'vitunguu'];
+  const swahiliKeywords = ['nimeuza', 'nilinunua', 'shilingi', 'kilo', 'leo', 'jana', 'nyanya', 'vitunguu', 'kukopa', 'nimekopa', 'mkopo', 'benki', 'deni', 'madeni'];
   const lowerText = text.toLowerCase();
   
   for (const keyword of swahiliKeywords) {
@@ -258,15 +279,15 @@ export function generateConfirmation(extractedData, language = 'en') {
       'sale': 'Mauzo',
       'purchase': 'Ununuzi',
       'expense': 'Matumizi',
-      'debt': 'Deni'
+      'debt': 'Mkopo'
     }[transactionType] || 'Muamala';
     
-    let message = `✅ ${typeText} imerekodiwa:\n`;
+    let message = `${typeText} imerekodiwa:\n`;
     items.forEach(item => {
       message += `- ${item.name}: ${item.quantity} ${item.unit} @ KES ${item.unitPrice.toFixed(2)}\n`;
     });
     message += `\nJumla: KES ${totalAmount.toFixed(2)}`;
-    if (customerName) message += `\nMteja: ${customerName}`;
+    if (customerName) message += `\nMkopaji: ${customerName}`;
     
     return message;
   }
@@ -276,15 +297,15 @@ export function generateConfirmation(extractedData, language = 'en') {
     'sale': 'Sale',
     'purchase': 'Purchase',
     'expense': 'Expense',
-    'debt': 'Debt'
+    'debt': 'Loan'
   }[transactionType] || 'Transaction';
   
-  let message = `✅ ${typeText} recorded successfully:\n`;
+  let message = `${typeText} recorded successfully:\n`;
   items.forEach(item => {
     message += `- ${item.name}: ${item.quantity} ${item.unit} @ KES ${item.unitPrice.toFixed(2)}\n`;
   });
   message += `\nTotal: KES ${totalAmount.toFixed(2)}`;
-  if (customerName) message += `\nCustomer: ${customerName}`;
+  if (customerName) message += `\nBorrower: ${customerName}`;
   
   return message;
 }

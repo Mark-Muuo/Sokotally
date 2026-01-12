@@ -17,9 +17,12 @@ export const AuthProvider = ({ children }) => {
 					const me = await getProfile();
 					setUser(me.user || me);
 				} catch (e) {
-					// Token is invalid or expired, clear it
-					clearToken();
-					setUser(null);
+					// Only clear token if it's a 401/403 (authentication error)
+					// Network errors or other issues shouldn't log out the user
+					if (e.message?.includes('401') || e.message?.includes('403') || e.message?.includes('token')) {
+						clearToken();
+						setUser(null);
+					}
 				}
 			}
 		};

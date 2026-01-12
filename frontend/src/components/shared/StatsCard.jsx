@@ -64,13 +64,13 @@ const StatsCard = ({
   const colors = colorClasses[color] || colorClasses.blue;
 
   return (
-    <div className={`relative group overflow-hidden bg-gradient-to-br ${gradient ? colors.bg : 'bg-slate-900'} border ${colors.border} rounded-2xl ${size === 'large' ? 'p-7' : 'p-6'} hover:shadow-xl transition-all duration-300 shadow-lg`}>
+    <div className={`relative group overflow-hidden bg-gradient-to-br ${gradient ? colors.bg : 'bg-slate-900'} border ${colors.border} ${size === 'large' ? 'p-7' : 'p-6'} hover:shadow-xl transition-all duration-300 shadow-lg`}>
       {/* Animated glow effect */}
-      <div className={`absolute top-0 right-0 w-24 h-24 ${colors.glow} rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
+      <div className={`absolute top-0 right-0 w-24 h-24 ${colors.glow} blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
       
       <div className="relative">
         {icon && (
-          <div className={`${size === 'large' ? 'w-14 h-14 mb-4' : 'w-12 h-12 mb-3'} rounded-xl ${colors.icon} flex items-center justify-center shadow-lg ${colors.shadow} group-hover:scale-110 transition-transform duration-300`}>
+          <div className={`${size === 'large' ? 'w-14 h-14 mb-4' : 'w-12 h-12 mb-3'} ${colors.icon} flex items-center justify-center shadow-lg ${colors.shadow} group-hover:scale-110 transition-transform duration-300`}>
             {typeof icon === 'string' ? (
               <span className={size === 'large' ? 'text-3xl' : 'text-2xl'}>{icon}</span>
             ) : (
