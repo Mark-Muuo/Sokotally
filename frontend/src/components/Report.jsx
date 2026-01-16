@@ -51,7 +51,7 @@ const Report = () => {
       sales: data.sales || 0,
       expenses: data.expenses || 0,
       profit: data.profit || 0,
-      debt: data.loans?.outstandingTotal || 0,
+      debt: data.debts?.outstandingTotal || 0,
     };
   }, [data]);
 
