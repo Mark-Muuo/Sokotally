@@ -7,14 +7,15 @@ const VoiceChatInterface = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [editableTranscript, setEditableTranscript] = useState('');
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [response, setResponse] = useState('');
   const [error, setError] = useState('');
   const [micPermission, setMicPermission] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [visualLevel, setVisualLevel] = useState(0);
   
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const recognitionRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
@@ -29,31 +30,27 @@ const VoiceChatInterface = () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
       window.speechSynthesis.cancel();
     };
   }, []);
 
-  const checkMicrophonePermission = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
-      setMicPermission(true);
-      return true;
-    } catch (err) {
+  const checkSpeechRecognitionSupport = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       setMicPermission(false);
-      setError('Microphone access denied. Please enable microphone permissions.');
+      setError('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
       return false;
     }
+    setMicPermission(true);
+    return true;
   };
 
-  const startRecording = async () => {
-    setError('');
-    
-    const hasPermission = await checkMicrophonePermission();
-    if (!hasPermission) return;
-
+  const setupVisualization = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      // Get microphone access for visualization only
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -65,46 +62,101 @@ const VoiceChatInterface = () => {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
-      
+
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.8;
       microphone.connect(analyser);
-      
+
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
-
-      // Setup media recorder
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await processVoiceMessage(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(true);
 
       // Start visualization
       visualizeAudio();
 
-      // Auto-stop on silence (3 seconds)
-      startSilenceDetection();
+      // Store stream reference to stop it later
+      stream.getTracks().forEach(track => {
+        track.onended = () => {
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          }
+        };
+      });
 
     } catch (err) {
-      console.error('Recording error:', err);
-      setError('Failed to start recording. Please check microphone permissions.');
+      console.log('Visualization setup failed, continuing without visual feedback');
+      // Don't set error - speech recognition can still work without visualization
+    }
+  };
+
+  const startRecording = async () => {
+    setError('');
+    setTranscript('');
+    setEditableTranscript('');
+    setIsEditingTranscript(false);
+
+    if (!checkSpeechRecognitionSupport()) return;
+
+    try {
+      // Create SpeechRecognition instance
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+
+      // Configure for Kiswahili
+      recognition.lang = 'sw-TZ'; // Kiswahili (Tanzania)
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+        console.log('Speech recognition started');
+      };
+
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Show interim results with visual indicator
+        setTranscript(finalTranscript || interimTranscript + '...');
+
+        // When we get a final result, prepare it for editing
+        if (finalTranscript) {
+          console.log('Final transcript:', finalTranscript);
+          setEditableTranscript(finalTranscript);
+          setIsEditingTranscript(true);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+        setError(`Speech recognition error: ${event.error}`);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+        console.log('Speech recognition ended');
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+
+      // Setup audio context for visualization (using a dummy stream since we don't have access to the recognition audio)
+      setupVisualization();
+
+    } catch (err) {
+      console.error('Speech recognition setup error:', err);
+      setError('Failed to start speech recognition. Please check microphone permissions.');
     }
   };
 
@@ -163,63 +215,56 @@ const VoiceChatInterface = () => {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
       setIsRecording(false);
     }
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
   };
 
-  const processVoiceMessage = async (audioBlob) => {
+  const processVoiceMessage = async (transcribedText) => {
     setIsProcessing(true);
-    setTranscript('Processing...');
 
     try {
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'voice.webm');
-      if (conversationId) {
-        formData.append('conversationId', conversationId);
-      }
-
       const token = getValidToken();
-      const response = await fetch(`${API_BASE}/chat/voice`, {
+      const response = await fetch(`${API_BASE}/chat/message`, {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: formData
+        body: JSON.stringify({
+          message: transcribedText,
+          conversationId: conversationId,
+          language: 'sw' // Indicate Kiswahili language
+        })
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process voice message');
+        throw new Error('Failed to process message');
       }
 
       const data = await response.json();
-      
-      setTranscript(data.transcription || 'Voice message');
+
       setResponse(data.reply);
-      
+
       if (data.conversationId) {
         setConversationId(data.conversationId);
       }
 
-      // Try server-side TTS first, fallback to client-side
+      // Play audio response
       await playAudioResponse(data.reply);
 
     } catch (err) {
-      console.error('Voice processing error:', err);
-      setError('Failed to process voice message. Please try again.');
-      setTranscript('');
+      console.error('Message processing error:', err);
+      setError('Failed to process message. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -300,9 +345,32 @@ const VoiceChatInterface = () => {
     setIsSpeaking(false);
   };
 
+  const sendEditedTranscript = () => {
+    if (editableTranscript.trim()) {
+      processVoiceMessage(editableTranscript.trim());
+      setIsEditingTranscript(false);
+    }
+  };
+
+  const recordAgain = () => {
+    setTranscript('');
+    setEditableTranscript('');
+    setIsEditingTranscript(false);
+    setError('');
+    startRecording();
+  };
+
+  const cancelEditing = () => {
+    setEditableTranscript('');
+    setTranscript('');
+    setIsEditingTranscript(false);
+  };
+
   const resetConversation = () => {
     setConversationId(null);
     setTranscript('');
+    setEditableTranscript('');
+    setIsEditingTranscript(false);
     setResponse('');
     setError('');
   };
@@ -331,21 +399,23 @@ const VoiceChatInterface = () => {
         <div className="relative flex flex-col items-center">
           {/* Animated Circle */}
           <div className="relative mb-8">
-            <div 
+            <div
               className={`w-48 h-48 rounded-full flex items-center justify-center transition-all duration-300 ${
-                isRecording 
-                  ? 'bg-gradient-to-br from-red-500 to-pink-500 shadow-lg shadow-red-500/50' 
-                  : isSpeaking 
+                isRecording
+                  ? 'bg-gradient-to-br from-red-500 to-pink-500 shadow-lg shadow-red-500/50'
+                  : isSpeaking
                     ? 'bg-gradient-to-br from-blue-500 to-purple-500 shadow-lg shadow-blue-500/50 animate-pulse'
                     : isProcessing
                       ? 'bg-gradient-to-br from-yellow-500 to-orange-500 shadow-lg shadow-yellow-500/50'
-                      : 'bg-gradient-to-br from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500 cursor-pointer'
+                      : isEditingTranscript
+                        ? 'bg-gradient-to-br from-green-600 to-emerald-600 shadow-lg shadow-green-500/30'
+                        : 'bg-gradient-to-br from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500 cursor-pointer'
               }`}
               style={{
                 transform: `scale(${getPulseScale()})`,
                 transition: 'transform 0.1s ease-out'
               }}
-              onClick={!isRecording && !isProcessing && !isSpeaking ? startRecording : undefined}
+              onClick={!isRecording && !isProcessing && !isSpeaking && !isEditingTranscript ? startRecording : undefined}
             >
               {/* Icon */}
               <div className="text-white">
@@ -361,6 +431,10 @@ const VoiceChatInterface = () => {
                 ) : isProcessing ? (
                   <svg className="w-20 h-20 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                ) : isEditingTranscript ? (
+                  <svg className="w-20 h-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                 ) : (
                   <svg className="w-20 h-20" fill="currentColor" viewBox="0 0 24 24">
@@ -387,53 +461,91 @@ const VoiceChatInterface = () => {
           {/* Status Text */}
           <div className="text-center mb-6">
             <p className="text-2xl font-semibold text-white mb-2">
-              {isRecording ? 'Listening...' : isSpeaking ? 'Speaking...' : isProcessing ? 'Processing...' : 'Tap to talk'}
+              {isRecording ? 'Listening...' : isSpeaking ? 'Speaking...' : isProcessing ? 'Processing...' : isEditingTranscript ? 'Review your message' : 'Tap to talk'}
             </p>
             {isRecording && (
               <p className="text-slate-400 text-sm">Speak naturally, I'll stop when you're done</p>
             )}
+            {isEditingTranscript && (
+              <p className="text-slate-400 text-sm">Edit your message or send as is</p>
+            )}
           </div>
 
           {/* Controls */}
-          <div className="flex gap-4 mb-8">
-            {isRecording && (
-              <button
-                onClick={stopRecording}
-                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-full font-medium transition-colors"
-              >
-                Stop Recording
-              </button>
-            )}
-            
-            {isSpeaking && (
-              <button
-                onClick={stopSpeaking}
-                className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-full font-medium transition-colors"
-              >
-                Stop Speaking
-              </button>
-            )}
+          {!isEditingTranscript && (
+            <div className="flex gap-4 mb-8">
+              {isRecording && (
+                <button
+                  onClick={stopRecording}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-full font-medium transition-colors"
+                >
+                  Stop Recording
+                </button>
+              )}
 
-            {(transcript || response) && !isRecording && !isProcessing && (
-              <button
-                onClick={resetConversation}
-                className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-full font-medium transition-colors"
-              >
-                New Conversation
-              </button>
-            )}
-          </div>
+              {isSpeaking && (
+                <button
+                  onClick={stopSpeaking}
+                  className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-full font-medium transition-colors"
+                >
+                  Stop Speaking
+                </button>
+              )}
+
+              {(transcript || response) && !isRecording && !isProcessing && (
+                <button
+                  onClick={resetConversation}
+                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-full font-medium transition-colors"
+                >
+                  New Conversation
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Transcript & Response Display */}
-          {(transcript || response) && (
+          {(transcript || response || isEditingTranscript) && (
             <div className="w-full space-y-4">
-              {transcript && (
+              {isEditingTranscript ? (
+                <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
+                  <p className="text-xs text-slate-400 mb-3">Review your message:</p>
+                  <textarea
+                    value={editableTranscript}
+                    onChange={(e) => setEditableTranscript(e.target.value)}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg p-3 text-white text-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Edit your transcribed message..."
+                    autoFocus
+                  />
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={sendEditedTranscript}
+                      disabled={!editableTranscript.trim() || isProcessing}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                    >
+                      Send Message
+                    </button>
+                    <button
+                      onClick={recordAgain}
+                      className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      Record Again
+                    </button>
+                    <button
+                      onClick={cancelEditing}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : transcript && !isEditingTranscript ? (
                 <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
                   <p className="text-xs text-slate-400 mb-2">You said:</p>
                   <p className="text-white text-lg">{transcript}</p>
                 </div>
-              )}
-              
+              ) : null}
+
               {response && (
                 <div className="bg-gradient-to-br from-blue-900/30 to-purple-900/30 rounded-2xl p-6 border border-blue-700/50">
                   <p className="text-xs text-blue-300 mb-2">AI replied:</p>

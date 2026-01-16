@@ -1,18 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getValidToken } from '../storage/auth';
 import { API_BASE } from '../config/api';
-import VoiceChatInterface from './VoiceChatInterface';
 
 const SokoAssistant = () => {
-  const [activeTab, setActiveTab] = useState('text');
   const [conversations, setConversations] = useState([]); // List of all conversations
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const messagesEndRef = useRef(null);
   const prevMessagesCount = useRef(messages.length);
+  const recognitionRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -29,6 +30,15 @@ const SokoAssistant = () => {
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
+  }, []);
+
+  // Cleanup voice recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
   }, []);
 
   // Load all conversations from backend
@@ -220,6 +230,83 @@ const SokoAssistant = () => {
     }
   };
 
+  // Voice recording functionality
+  const checkSpeechRecognitionSupport = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return false;
+    }
+    return true;
+  };
+
+  const startVoiceRecording = () => {
+    if (!checkSpeechRecognitionSupport()) return;
+
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+
+      recognition.lang = 'sw-TZ';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Add final transcript to input
+        if (finalTranscript.trim()) {
+          setInputValue(prev => prev + (prev ? ' ' : '') + finalTranscript.trim());
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+
+    } catch (err) {
+      console.error('Voice recording setup error:', err);
+      alert('Failed to start voice recording. Please check microphone permissions.');
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+  };
+
+  const handleVoiceButton = () => {
+    if (isRecording) {
+      stopVoiceRecording();
+    } else {
+      startVoiceRecording();
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-slate-900 overflow-hidden">
       {/* Sidebar - Hidden on mobile, slide in on tablet+ */}
@@ -334,7 +421,7 @@ const SokoAssistant = () => {
             </button>
 
             <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white hidden sm:flex items-center gap-2">
-              {activeTab === 'text' ? 'AI Chat Assistant' : 'Voice Chat'}
+              AI Chat Assistant
             </h1>
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -349,45 +436,13 @@ const SokoAssistant = () => {
             </button>
           </div>
 
-          {/* Tab Buttons */}
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 border border-gray-200 dark:border-slate-600">
-            <button
-              onClick={() => setActiveTab('text')}
-              className={`flex items-center gap-2 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold transition ${
-                activeTab === 'text'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-600'
-              }`}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-              <span className="hidden sm:inline">Text</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('voice')}
-              className={`flex items-center gap-2 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold transition ${
-                activeTab === 'voice'
-                  ? 'bg-purple-600 text-white'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-600'
-              }`}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              </svg>
-              <span className="hidden sm:inline">Voice</span>
-            </button>
-            {/* Removed AI Agent button per design request */}
-          </div>
         </div>
 
         {/* Chat Content */}
         <div className="flex-1 overflow-hidden">
-          {activeTab === 'text' ? (
-            <div className="h-full flex flex-col w-full relative">
-              {/* Messages Area */}
-              <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-6 space-y-4 md:space-y-6 max-w-5xl mx-auto w-full">
+          <div className="h-full flex flex-col w-full relative">
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-6 space-y-4 md:space-y-6 max-w-5xl mx-auto w-full">
                 {messages.map((message) => (
                   <div key={message.id} className="space-y-2">
                     {message.type === 'user' ? (
@@ -436,6 +491,14 @@ const SokoAssistant = () => {
               {/* Input Area */}
               <div className="border-t border-slate-800/50 bg-slate-900/90 backdrop-blur-xl p-4 sm:p-6 shadow-2xl">
                 <div className="max-w-5xl mx-auto">
+                  {/* Recording Status */}
+                  {isRecording && (
+                    <div className="text-center mb-3">
+                      <p className="text-red-400 text-sm font-medium animate-pulse">
+                        Ongea sasa... (Speak now)
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-end gap-2 sm:gap-3">
                     <div className="flex-1 relative">
                       <input
@@ -447,6 +510,28 @@ const SokoAssistant = () => {
                         className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-600 rounded px-5 sm:px-6 py-3.5 sm:py-4 text-sm sm:text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                       />
                     </div>
+
+                    {/* Voice Button */}
+                    <button
+                      onClick={handleVoiceButton}
+                      disabled={isLoading}
+                      className={`p-3 sm:p-4 border border-gray-300 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition flex items-center justify-center shrink-0 ${
+                        isRecording ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' : 'bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700'
+                      }`}
+                      title={isRecording ? "Stop recording" : "Start voice input (Kiswahili)"}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        {isRecording && (
+                          <>
+                            <circle cx="12" cy="12" r="8" fill="currentColor" opacity="0.2"/>
+                            <circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.4"/>
+                          </>
+                        )}
+                      </svg>
+                    </button>
+
                     <button
                       onClick={handleSendMessage}
                       disabled={isLoading || !inputValue.trim()}
@@ -464,16 +549,12 @@ const SokoAssistant = () => {
                     </button>
                   </div>
                   <p className="text-center text-slate-500 text-xs sm:text-sm mt-4 flex items-center justify-center gap-1.5">
-                    
-                    <span>Ask specific questions or tell me about your sales</span>
+                    <span>Ask specific questions or tell me about your sales • Voice input available</span>
                   </p>
                 </div>
               </div>
             </div>
-          ) : (
-            <VoiceChatInterface />
-          )}
-        </div>
+          </div>
       </div>
     </div>
   );
