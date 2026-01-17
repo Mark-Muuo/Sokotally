@@ -58,17 +58,14 @@ const Dashboard = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-cyan-50 dark:from-slate-950 dark:via-purple-950/30 dark:to-slate-950">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Header */}
-      <div className="relative bg-gradient-to-r from-purple-600 via-pink-500 to-cyan-500 text-white px-6 py-16 shadow-2xl overflow-hidden">
-        <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%,transparent_100%)] bg-[length:250%_250%] animate-[shimmer_3s_linear_infinite]"></div>
-        <div className="absolute top-0 right-0 w-96 h-96 bg-white/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-cyan-400/30 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 animate-pulse"></div>
-        <div className="max-w-7xl mx-auto relative z-10">
-          <h1 className="text-4xl md:text-6xl font-black mb-4 drop-shadow-2xl animate-[fadeIn_0.5s_ease-out]">
-            Welcome back, {user?.name || "User"}! 👋
+      <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-6 py-10">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl md:text-4xl font-semibold text-gray-900 dark:text-white">
+            Welcome back, {user?.name || "User"}
           </h1>
-          <p className="text-purple-100 text-base md:text-xl font-semibold drop-shadow-lg">
+          <p className="text-gray-500 dark:text-gray-400 text-sm md:text-base mt-2">
             {currentDate}
           </p>
         </div>
@@ -77,116 +74,61 @@ const Dashboard = () => {
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 space-y-8">
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-900 dark:border-white border-t-transparent"></div>
           </div>
         ) : (
           <>
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
                 {
                   label: "Total Sales",
                   value: stats.sales,
-                  color: "from-green-500 to-emerald-600",
-                  icon: (
-                    <svg
-                      className="w-8 h-8"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                      />
-                    </svg>
-                  ),
+                  symbol: "↑",
+                  color: "text-green-600 dark:text-green-400",
+                  bg: "bg-green-50 dark:bg-green-900/20",
                 },
                 {
                   label: "Total Expenses",
                   value: stats.expenses,
-                  color: "from-red-500 to-pink-600",
-                  icon: (
-                    <svg
-                      className="w-8 h-8"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"
-                      />
-                    </svg>
-                  ),
+                  symbol: "↓",
+                  color: "text-red-600 dark:text-red-400",
+                  bg: "bg-red-50 dark:bg-red-900/20",
                 },
                 {
                   label: "Net Profit",
                   value: stats.profit,
-                  color: "from-blue-500 to-indigo-600",
-                  icon: (
-                    <svg
-                      className="w-8 h-8"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  ),
+                  symbol: "■",
+                  color: "text-blue-600 dark:text-blue-400",
+                  bg: "bg-blue-50 dark:bg-blue-900/20",
                 },
                 {
                   label: "Outstanding Debts",
                   value: stats.debt,
-                  color: "from-orange-500 to-yellow-600",
-                  icon: (
-                    <svg
-                      className="w-8 h-8"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-                      />
-                    </svg>
-                  ),
+                  symbol: "◆",
+                  color: "text-orange-600 dark:text-orange-400",
+                  bg: "bg-orange-50 dark:bg-orange-900/20",
                 },
               ].map((stat, index) => (
                 <div
                   key={index}
-                  className="group relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden border border-white/20 dark:border-slate-700/50 hover:-translate-y-2 hover:scale-105"
+                  className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                  <div
-                    className={`bg-gradient-to-br ${stat.color} p-5 text-white relative`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold opacity-95 uppercase tracking-wider">
-                        {stat.label}
-                      </p>
-                      <div className="transform group-hover:scale-125 group-hover:rotate-12 transition-transform duration-500">
-                        {stat.icon}
-                      </div>
+                  <div className="flex items-start justify-between mb-3">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide font-medium">
+                      {stat.label}
+                    </p>
+                    <div
+                      className={`w-10 h-10 ${stat.bg} rounded-lg flex items-center justify-center`}
+                    >
+                      <span className={`text-2xl ${stat.color}`}>
+                        {stat.symbol}
+                      </span>
                     </div>
                   </div>
-                  <div className="p-6 relative">
-                    <p className="text-3xl font-black bg-gradient-to-r from-purple-600 to-cyan-600 dark:from-purple-400 dark:to-cyan-400 bg-clip-text text-transparent">
-                      KSh {stat.value.toLocaleString()}
-                    </p>
-                  </div>
+                  <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                    KSh {stat.value.toLocaleString()}
+                  </p>
                 </div>
               ))}
             </div>
@@ -194,14 +136,14 @@ const Dashboard = () => {
             {/* Two Column Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Recent Transactions - Takes 2 columns */}
-              <div className="lg:col-span-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-xl overflow-hidden border border-white/30 dark:border-slate-700/50">
-                <div className="px-6 py-5 border-b border-gray-200/50 dark:border-slate-700/50 flex items-center justify-between bg-gradient-to-r from-purple-50 to-cyan-50 dark:from-purple-900/20 dark:to-cyan-900/20">
-                  <h2 className="text-2xl font-black bg-gradient-to-r from-purple-600 to-cyan-600 dark:from-purple-400 dark:to-cyan-400 bg-clip-text text-transparent">
+              <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Recent Activity
                   </h2>
                   <Link
                     to="/record"
-                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition flex items-center gap-1"
+                    className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-1"
                   >
                     View All
                     <svg
@@ -249,7 +191,7 @@ const Dashboard = () => {
                       {recent.map((t, i) => (
                         <div
                           key={i}
-                          className="group flex items-center justify-between p-4 rounded-xl border border-gray-200/50 dark:border-slate-700/50 bg-gradient-to-r from-white to-gray-50/50 dark:from-slate-800 dark:to-slate-750/50 hover:shadow-lg hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-300 hover:-translate-x-1"
+                          className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition"
                         >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
@@ -322,38 +264,55 @@ const Dashboard = () => {
               </div>
 
               {/* Top Selling Items */}
-              <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-xl overflow-hidden border border-white/30 dark:border-slate-700/50">
-                <div className="px-6 py-5 border-b border-gray-200/50 dark:border-slate-700/50 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20">
-                  <h2 className="text-2xl font-black bg-gradient-to-r from-emerald-600 to-green-600 dark:from-emerald-400 dark:to-green-400 bg-clip-text text-transparent">
+              <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Top Products
                   </h2>
                 </div>
                 <div className="p-6">
                   {!topItems || topItems.length === 0 ? (
                     <div className="text-center py-16">
-                      <div className="w-20 h-20 bg-gradient-to-br from-emerald-100 to-green-100 dark:from-emerald-900/30 dark:to-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                        <span className="text-4xl animate-bounce">📦</span>
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg
+                          className="w-8 h-8 text-gray-500 dark:text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                          />
+                        </svg>
                       </div>
-                      <p className="text-gray-500 dark:text-gray-400 font-semibold">
+                      <p className="text-gray-500 dark:text-gray-400 font-medium">
                         No sales data yet
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {topItems.map((item, i) => (
                         <div
                           key={i}
-                          className="group flex items-center justify-between p-4 rounded-xl border border-gray-200/50 dark:border-slate-700/50 bg-gradient-to-r from-white to-emerald-50/30 dark:from-slate-800 dark:to-emerald-900/10 hover:shadow-lg hover:border-emerald-300 dark:hover:border-emerald-600 transition-all duration-300 hover:scale-[1.02]"
+                          className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-slate-800 last:border-0 last:pb-0 hover:bg-gray-50 dark:hover:bg-slate-800/30 p-2 rounded-lg transition-colors -mx-2"
                         >
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 dark:text-white truncate">
-                              {item.name}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                              {item.quantity} units sold
-                            </p>
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-8 h-8 bg-blue-600 dark:bg-blue-500 rounded-lg flex items-center justify-center text-white text-sm font-semibold shadow-sm">
+                              {i + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900 dark:text-white truncate">
+                                {item.name}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {item.quantity} units sold
+                              </p>
+                            </div>
                           </div>
-                          <span className="text-sm font-bold text-green-600 dark:text-green-400 ml-3">
+                          <span className="text-sm font-semibold text-green-600 dark:text-green-400 ml-3">
                             KSh {item.revenue?.toLocaleString() || 0}
                           </span>
                         </div>
@@ -365,52 +324,35 @@ const Dashboard = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-xl p-6 border border-white/30 dark:border-slate-700/50">
-              <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-6">
+            <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm p-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
                 Quick Actions
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                   {
                     label: "Record Sale",
-                    icon: "💰",
                     path: "/record",
-                    color: "from-green-500 to-emerald-600",
                   },
                   {
                     label: "Add Expense",
-                    icon: "📝",
                     path: "/record",
-                    color: "from-red-500 to-pink-600",
                   },
                   {
                     label: "View Reports",
-                    icon: "📊",
                     path: "/report",
-                    color: "from-blue-500 to-indigo-600",
                   },
                   {
                     label: "AI Assistant",
-                    icon: "🤖",
                     path: "/assistant",
-                    color: "from-purple-500 to-violet-600",
                   },
                 ].map((action, index) => (
                   <Link
                     key={index}
                     to={action.path}
-                    className={`group relative bg-gradient-to-br ${action.color} text-white rounded-2xl p-6 text-center hover:shadow-2xl transform hover:scale-110 hover:-translate-y-2 transition-all duration-300 overflow-hidden`}
+                    className="bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded-lg p-4 text-center border border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800 transition"
                   >
-                    <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition-colors duration-300"></div>
-                    <div className="absolute -inset-1 bg-gradient-to-r from-white/20 to-white/0 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
-                    <div className="relative z-10">
-                      <div className="text-4xl mb-3 transform group-hover:scale-125 group-hover:rotate-12 transition-transform duration-300">
-                        {action.icon}
-                      </div>
-                      <p className="text-sm font-bold tracking-wide">
-                        {action.label}
-                      </p>
-                    </div>
+                    <p className="text-sm font-semibold">{action.label}</p>
                   </Link>
                 ))}
               </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import EditTransactionModal from "./shared/EditTransactionModal";
 import { getToken } from "../storage/auth";
 import { API_BASE } from "../config/api";
@@ -37,7 +37,7 @@ const Record = () => {
     loans: [],
   });
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
       const token = getToken();
@@ -88,11 +88,11 @@ const Record = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDate]);
 
   useEffect(() => {
     fetchTransactions();
-  }, [selectedDate]);
+  }, [selectedDate, fetchTransactions]);
 
   const openModal = (type = "sale") => {
     setModalType(type);
@@ -176,40 +176,60 @@ const Record = () => {
   };
 
   const TransactionCard = ({ t, type }) => (
-    <div className="group relative bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-2xl p-5 shadow-xl border border-white/30 dark:border-slate-700/50 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02]">
+    <div className="bg-white dark:bg-slate-900 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-slate-800">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-2">
             <div
               className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                 type === "sales"
-                  ? "bg-gradient-to-br from-emerald-400 to-green-600"
+                  ? "bg-green-100 dark:bg-green-900/30"
                   : type === "expenses"
-                  ? "bg-gradient-to-br from-red-400 to-pink-600"
+                  ? "bg-red-100 dark:bg-red-900/30"
                   : type === "debts"
-                  ? "bg-gradient-to-br from-purple-400 to-violet-600"
-                  : "bg-gradient-to-br from-orange-400 to-amber-600"
-              } shadow-lg transform group-hover:scale-110 transition-transform duration-300`}
+                  ? "bg-purple-100 dark:bg-purple-900/30"
+                  : "bg-amber-100 dark:bg-amber-900/30"
+              }`}
             >
-              <span className="text-2xl">
-                {type === "sales"
-                  ? "💰"
-                  : type === "expenses"
-                  ? "💸"
-                  : type === "debts"
-                  ? "💳"
-                  : "🏦"}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-bold text-lg text-gray-900 dark:text-white truncate">
-                {t.customerName && (
-                  <span className="text-purple-600 dark:text-purple-400">
-                    {t.customerName} •{" "}
-                  </span>
+              <svg
+                className="w-6 h-6 text-gray-700 dark:text-gray-200"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                {type === "sales" ? (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                ) : type === "expenses" ? (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
+                ) : (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+                  />
                 )}
-                {t.items?.map((item) => item.name).join(", ") || t.desc}
-              </p>
+              <span
+                className={`text-xl font-semibold ${
+                  type === "sales"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : type === "expenses"
+                    ? "text-red-600 dark:text-red-400"
+                    : type === "debts"
+                    ? "text-purple-600 dark:text-purple-400"
+                    : "text-amber-600 dark:text-amber-400"
+                }`}
+              >
               <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-1">
                 {t.date}{" "}
                 {t.status && (
@@ -233,10 +253,10 @@ const Record = () => {
               type === "sales"
                 ? "text-emerald-600 dark:text-emerald-400"
                 : type === "expenses"
-                ? "text-red-600 dark:text-red-400"
-                : type === "debts"
-                ? "text-purple-600 dark:text-purple-400"
-                : "text-orange-600 dark:text-orange-400"
+                  ? "text-red-600 dark:text-red-400"
+                  : type === "debts"
+                    ? "text-purple-600 dark:text-purple-400"
+                    : "text-orange-600 dark:text-orange-400"
             }`}
           >
             {formatCurrency(t.amount)}
@@ -306,16 +326,14 @@ const Record = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-cyan-50 to-blue-50 dark:from-slate-900 dark:via-purple-900/20 dark:to-slate-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Header */}
-      <div className="relative bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-500 text-white px-6 py-10 shadow-2xl overflow-hidden">
-        <div className="absolute inset-0 bg-black/10"></div>
-        <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-        <div className="max-w-7xl mx-auto relative z-10">
-          <h1 className="text-3xl md:text-4xl font-extrabold mb-2">
-            Daily Transactions 📝
+      <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-6 py-10">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl md:text-4xl font-semibold text-gray-900 dark:text-white mb-2">
+            Daily Transactions
           </h1>
-          <p className="text-emerald-100 text-sm md:text-base">
+          <p className="text-gray-500 dark:text-gray-400 text-sm md:text-base">
             Track your sales and expenses for{" "}
             {new Date(selectedDate).toLocaleDateString("en-US", {
               weekday: "long",
@@ -329,10 +347,10 @@ const Record = () => {
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 space-y-6">
         {/* Date Controls */}
-        <div className="flex flex-wrap items-center gap-3 bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-2xl p-5 shadow-xl border border-white/30 dark:border-slate-700/50">
+        <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-slate-800">
           <button
             onClick={fetchTransactions}
-            className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+            className="inline-flex items-center gap-2 px-5 py-3 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-md transition-all"
           >
             <svg
               className="w-5 h-5"
@@ -353,7 +371,7 @@ const Record = () => {
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="flex-1 min-w-[200px] bg-white dark:bg-slate-800 border-2 border-purple-200 dark:border-purple-700 text-gray-900 dark:text-white text-sm font-semibold px-4 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-purple-300 dark:focus:ring-purple-600 transition-all"
+            className="flex-1 min-w-[200px] bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 text-gray-900 dark:text-white text-sm font-medium px-4 py-3 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900/10"
           />
           <button
             onClick={() =>
@@ -365,61 +383,33 @@ const Record = () => {
                 return `${year}-${month}-${day}`;
               })
             }
-            className="px-5 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+            className="px-5 py-3 bg-white text-gray-900 border border-gray-300 hover:bg-gray-50 text-sm font-semibold rounded-md transition-all"
           >
-            📅 Today
+            Today
           </button>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            {
-              label: "Sales",
-              value: stats.sales,
-              gradient: "from-emerald-500 to-green-600",
-              icon: "💰",
-            },
-            {
-              label: "Expenses",
-              value: stats.expenses,
-              gradient: "from-red-500 to-pink-600",
-              icon: "💸",
-            },
-            {
-              label: "Profit",
-              value: stats.profit,
-              gradient: "from-blue-500 to-indigo-600",
-              icon: "📈",
-            },
-            {
-              label: "Debts",
-              value: stats.debts,
-              gradient: "from-purple-500 to-violet-600",
-              icon: "💳",
-            },
+            { label: "Sales", value: stats.sales, color: "text-green-600 dark:text-green-400", bg: "bg-green-50 dark:bg-green-900/20" },
+            { label: "Expenses", value: stats.expenses, color: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-900/20" },
+            { label: "Profit", value: stats.profit, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20" },
+            { label: "Debts", value: stats.debts, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20" },
           ].map((stat, i) => (
             <div
               key={i}
-              className="group relative bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 overflow-hidden hover:shadow-2xl transition-all duration-300 hover:-translate-y-1"
+              className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow"
             >
-              <div
-                className={`bg-gradient-to-br ${stat.gradient} p-4 text-white`}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold uppercase tracking-wider opacity-90">
-                    {stat.label}
-                  </p>
-                  <span className="text-2xl transform group-hover:scale-125 transition-transform duration-300">
-                    {stat.icon}
-                  </span>
-                </div>
-              </div>
-              <div className="p-5">
-                <p className="text-2xl font-black bg-gradient-to-r from-purple-600 to-cyan-600 dark:from-purple-400 dark:to-cyan-400 bg-clip-text text-transparent">
-                  KSh {stat.value.toLocaleString()}
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`w-2 h-2 ${stat.bg.replace('bg-', 'bg-').replace('/20', '')} rounded-full`}></div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  {stat.label}
                 </p>
               </div>
+              <p className={`text-2xl font-semibold ${stat.color}`}>
+                KSh {stat.value.toLocaleString()}
+              </p>
             </div>
           ))}
         </div>
@@ -427,43 +417,17 @@ const Record = () => {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            {
-              label: "Add Sale",
-              icon: "💰",
-              type: "sale",
-              gradient: "from-emerald-500 to-green-600",
-            },
-            {
-              label: "Add Expense",
-              icon: "💸",
-              type: "expense",
-              gradient: "from-red-500 to-pink-600",
-            },
-            {
-              label: "Add Debt",
-              icon: "💳",
-              type: "debt",
-              gradient: "from-purple-500 to-violet-600",
-            },
-            {
-              label: "Add Loan",
-              icon: "🏦",
-              type: "loan",
-              gradient: "from-orange-500 to-amber-600",
-            },
+            { label: "Add Sale", type: "sale", bg: "bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600" },
+            { label: "Add Expense", type: "expense", bg: "bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600" },
+            { label: "Add Debt", type: "debt", bg: "bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600" },
+            { label: "Add Loan", type: "loan", bg: "bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600" },
           ].map((action, i) => (
             <button
               key={i}
               onClick={() => openModal(action.type)}
-              className={`group relative bg-gradient-to-br ${action.gradient} text-white rounded-2xl p-5 text-center shadow-lg hover:shadow-2xl transform hover:scale-110 transition-all duration-300 overflow-hidden`}
+              className={`${action.bg} text-white rounded-lg p-4 text-center transition-all font-medium shadow-sm hover:shadow-md`}
             >
-              <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition-colors duration-300"></div>
-              <div className="relative z-10">
-                <div className="text-3xl mb-2 transform group-hover:scale-125 transition-transform duration-300">
-                  {action.icon}
-                </div>
-                <p className="text-sm font-bold">{action.label}</p>
-              </div>
+              {action.label}
             </button>
           ))}
         </div>
@@ -471,15 +435,31 @@ const Record = () => {
         {/* Transactions */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-600 border-t-transparent"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-900 dark:border-white border-t-transparent"></div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Sales */}
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-2xl">💰</span>
+                <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                  <span className="text-lg text-green-600 dark:text-green-400 font-bold">+</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Sales ({categorized.sales.length})
+                </h3>
+              </div>
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -491,9 +471,21 @@ const Record = () => {
                 </div>
               </div>
               {categorized.sales.length === 0 ? (
-                <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-xl rounded-2xl p-12 text-center border border-white/20">
-                  <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-4xl">💰</span>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-10 text-center border border-gray-200 dark:border-slate-800">
+                  <div className="w-16 h-16 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg
+                      className="w-8 h-8 text-gray-600 dark:text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
                   </div>
                   <p className="text-gray-500 dark:text-gray-400 font-medium">
                     No sales for this day
@@ -511,8 +503,22 @@ const Record = () => {
             {/* Expenses */}
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-2xl">💸</span>
+                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                  <span className="text-lg text-red-600 dark:text-red-400 font-bold">−</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Expenses ({categorized.expenses.length})
+                </h3>
+              </div>
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
+                  </svg>
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -524,9 +530,21 @@ const Record = () => {
                 </div>
               </div>
               {categorized.expenses.length === 0 ? (
-                <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-xl rounded-2xl p-12 text-center border border-white/20">
-                  <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-4xl">💸</span>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-10 text-center border border-gray-200 dark:border-slate-800">
+                  <div className="w-16 h-16 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg
+                      className="w-8 h-8 text-gray-600 dark:text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                      />
+                    </svg>
                   </div>
                   <p className="text-gray-500 dark:text-gray-400 font-medium">
                     No expenses for this day
@@ -545,9 +563,13 @@ const Record = () => {
             {categorized.debts.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-2xl">💳</span>
+                  <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                    <span className="text-lg text-purple-600 dark:text-purple-400 font-bold">↓</span>
                   </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Debts ({categorized.debts.length})
+                  </h3>
+                </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                       Debts
@@ -569,17 +591,12 @@ const Record = () => {
             {categorized.loans.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-2xl">🏦</span>
+                  <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                    <span className="text-lg text-orange-600 dark:text-orange-400 font-bold">↑</span>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                      Loans
-                    </h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {categorized.loans.length} transactions
-                    </p>
-                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Loans ({categorized.loans.length})
+                  </h3>
                 </div>
                 <div className="space-y-3">
                   {categorized.loans.map((t) => (

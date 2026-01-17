@@ -13,10 +13,10 @@ const Layout = ({ children }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const navItems = [
-    { path: "/dashboard", icon: "📊", label: "Dashboard" },
-    { path: "/record", icon: "📝", label: "Transactions" },
-    { path: "/report", icon: "📈", label: "Reports" },
-    { path: "/assistant", icon: "🤖", label: "AI Assistant" },
+    { path: "/dashboard", label: "Dashboard" },
+    { path: "/record", label: "Transactions" },
+    { path: "/report", label: "Reports" },
+    { path: "/assistant", label: "Assistant" },
   ];
 
   const handleSignOut = () => {
@@ -24,7 +24,11 @@ const Layout = ({ children }) => {
     navigate("/");
   };
 
-  const avatarUrl = user?.avatar ? `${API_BASE}${user.avatar}` : null;
+  const avatarUrl = user?.avatar
+    ? user.avatar.startsWith("http")
+      ? user.avatar
+      : `${API_BASE}${user.avatar}`
+    : null;
   const userInitials = user?.name
     ? user.name
         .split(" ")
@@ -37,7 +41,7 @@ const Layout = ({ children }) => {
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-slate-900">
       {/* Top Navigation Bar */}
-      <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-slate-700/50 z-30 sticky top-0 shadow-lg">
+      <header className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 z-30 sticky top-0">
         <div className="flex items-center justify-between px-4 h-16">
           {/* Left: Menu button + Logo */}
           <div className="flex items-center gap-4">
@@ -59,11 +63,13 @@ const Layout = ({ children }) => {
                 />
               </svg>
             </button>
-            <Link to="/dashboard" className="flex items-center gap-2 group">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-600 via-pink-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
-                <span className="text-white font-black text-xl">S</span>
+            <Link to="/dashboard" className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-lg border border-gray-200 dark:border-slate-700 flex items-center justify-center bg-white dark:bg-slate-800">
+                <span className="text-gray-900 dark:text-white font-semibold text-base">
+                  S
+                </span>
               </div>
-              <h1 className="text-xl font-black bg-gradient-to-r from-purple-600 to-cyan-600 dark:from-purple-400 dark:to-cyan-400 bg-clip-text text-transparent hidden sm:block">
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white hidden sm:block">
                 SokoTally
               </h1>
             </Link>
@@ -74,7 +80,7 @@ const Layout = ({ children }) => {
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition"
               title={
                 theme === "dark"
                   ? "Switch to Light Mode"
@@ -109,7 +115,7 @@ const Layout = ({ children }) => {
               <div className="relative">
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition"
                 >
                   {avatarUrl ? (
                     <img
@@ -118,7 +124,7 @@ const Layout = ({ children }) => {
                       className="w-8 h-8 rounded-full object-cover"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-full bg-gray-900 dark:bg-slate-700 flex items-center justify-center">
                       <span className="text-white text-sm font-semibold">
                         {userInitials}
                       </span>
@@ -149,7 +155,7 @@ const Layout = ({ children }) => {
                       className="fixed inset-0 z-40"
                       onClick={() => setShowProfileMenu(false)}
                     ></div>
-                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 py-2 z-50">
+                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-gray-200 dark:border-slate-800 py-2 z-50">
                       <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
                           {user.name}
@@ -161,7 +167,7 @@ const Layout = ({ children }) => {
                       <Link
                         to="/profile"
                         onClick={() => setShowProfileMenu(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
                       >
                         <svg
                           className="w-5 h-5"
@@ -183,7 +189,7 @@ const Layout = ({ children }) => {
                           setShowProfileMenu(false);
                           handleSignOut();
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
                       >
                         <svg
                           className="w-5 h-5"
@@ -220,7 +226,7 @@ const Layout = ({ children }) => {
 
         {/* Sidebar */}
         <aside
-          className={`fixed md:static inset-y-0 left-0 w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 transform transition-transform duration-300 z-40 flex flex-col mt-0 md:mt-0 ${
+          className={`fixed md:static inset-y-0 left-0 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transform transition-transform duration-300 z-40 flex flex-col mt-0 md:mt-0 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
           }`}
         >
@@ -232,14 +238,13 @@ const Layout = ({ children }) => {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                  className={`flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-all ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md"
-                      : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                      ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+                      : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800"
                   }`}
                   onClick={() => setSidebarOpen(false)}
                 >
-                  <span className="text-xl">{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               );

@@ -2,6 +2,11 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
+import ChatMessage from "../models/ChatMessage.js";
+import Transaction from "../models/Transaction.js";
+import Item from "../models/Item.js";
+import Debt from "../models/Debt.js";
+import Customer from "../models/Customer.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
 
@@ -41,23 +46,21 @@ authRouter.post("/register", async (req, res) => {
       preferredLang: preferredLang || "en",
     });
     const token = sign(user);
-    return res
-      .status(201)
-      .json({
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          phone: user.phone,
-          preferredLang: user.preferredLang || "en",
-          firstName: user.firstName || "",
-          lastName: user.lastName || "",
-          town: user.town || "",
-          gender: user.gender || "",
-          ageRange: user.ageRange || "",
-          avatar: user.avatar || "",
-        },
-      });
+    return res.status(201).json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        preferredLang: user.preferredLang || "en",
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        town: user.town || "",
+        gender: user.gender || "",
+        ageRange: user.ageRange || "",
+        avatar: user.avatar || "",
+      },
+    });
   } catch (e) {
     return res.status(500).json({ error: "Server error" });
   }
@@ -302,6 +305,10 @@ authRouter.post(
   upload.single("avatar"),
   async (req, res) => {
     try {
+      console.log("Avatar upload request received");
+      console.log("User ID:", req.userId);
+      console.log("File:", req.file);
+
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
       }
@@ -313,6 +320,8 @@ authRouter.post(
 
       // Cloudinary returns the secure URL in req.file.path
       const avatarUrl = req.file.path;
+      console.log("Avatar URL from Cloudinary:", avatarUrl);
+
       await User.findByIdAndUpdate(req.userId, { avatar: avatarUrl });
 
       return res.json({
@@ -320,8 +329,36 @@ authRouter.post(
         avatar: avatarUrl,
       });
     } catch (error) {
-      console.error("Avatar upload error:", error);
-      return res.status(500).json({ error: "Failed to upload avatar" });
+      console.error("Avatar upload error details:", error);
+      console.error("Error stack:", error.stack);
+      return res.status(500).json({
+        error: "Failed to upload avatar",
+        details: error.message,
+      });
     }
   }
 );
+
+// Delete account and ALL user data (GDPR compliance)
+authRouter.delete("/account", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    // Delete all user data in parallel for efficiency
+    await Promise.all([
+      ChatMessage.deleteMany({ userId }),
+      Transaction.deleteMany({ userId }),
+      Item.deleteMany({ userId }),
+      Debt.deleteMany({ userId }),
+      Customer.deleteMany({ userId }),
+      User.findByIdAndDelete(userId),
+    ]);
+
+    return res.json({
+      message: "Account and all associated data deleted successfully",
+    });
+  } catch (error) {
+    console.error("Account deletion error:", error);
+    return res.status(500).json({ error: "Failed to delete account" });
+  }
+});

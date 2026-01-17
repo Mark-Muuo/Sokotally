@@ -13,12 +13,37 @@ import errorHandler from "./middleware/errorHandler.js";
 
 const app = express();
 
+// CORS configuration
+const allowedOrigins = [
+  "http://localhost:5173", // Local dev
+  "http://localhost:3000",
+  process.env.FRONTEND_URL, // Vercel deployment
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.some((allowed) => origin.startsWith(allowed))) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Allow all in production for now, change to false for strict CORS
+      }
+    },
+    credentials: true,
+  }),
+);
+
 // Core middleware
-app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
 
 // Health
+app.get("/", (_req, res) =>
+  res.json({ status: "ok", service: "Sokotally API" }),
+);
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // API routes
