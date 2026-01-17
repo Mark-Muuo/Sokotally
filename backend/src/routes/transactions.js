@@ -53,7 +53,7 @@ router.patch("/:id", authMiddleware, async (req, res, next) => {
     const doc = await Transaction.findOneAndUpdate(
       { _id: req.params.id, userId: toObjectId(req.userId) },
       req.body,
-      { new: true }
+      { new: true },
     );
     if (!doc) return res.status(404).json({ error: "Not Found" });
     res.json(doc);
@@ -84,7 +84,7 @@ router.get("/stats/dashboard", authMiddleware, async (req, res, next) => {
     const todayStart = new Date(
       now.getFullYear(),
       now.getMonth(),
-      now.getDate()
+      now.getDate(),
     );
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -229,8 +229,11 @@ router.get("/stats/dashboard", authMiddleware, async (req, res, next) => {
       { $sort: { _id: 1 } },
     ]);
 
-    // Recent transactions (last 50 to ensure we capture recent activity)
-    const recentTransactions = await Transaction.find({ userId })
+    // Recent transactions from today only (to match dashboard stats)
+    const recentTransactions = await Transaction.find({
+      userId,
+      occurredAt: { $gte: todayStart, $lte: todayEnd },
+    })
       .sort({ occurredAt: -1 })
       .limit(50)
       .lean();
@@ -631,7 +634,7 @@ router.get(
     } catch (e) {
       next(e);
     }
-  }
+  },
 );
 
 // Get sales trends by item over time
@@ -878,13 +881,13 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
       lines.push("# SokoTally Business Report");
       lines.push("");
       lines.push(
-        `Period: ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()}`
+        `Period: ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()}`,
       );
       lines.push("");
       lines.push("## Key Metrics");
       lines.push(`- Total Sales: KSh ${summary.totals.sales.toLocaleString()}`);
       lines.push(
-        `- Total Expenses: KSh ${summary.totals.expenses.toLocaleString()}`
+        `- Total Expenses: KSh ${summary.totals.expenses.toLocaleString()}`,
       );
       lines.push(`- Net Profit: KSh ${summary.totals.profit.toLocaleString()}`);
       lines.push("");
@@ -894,8 +897,8 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
         lines.push("|---|---:|---:|");
         summary.topItems.forEach((it) =>
           lines.push(
-            `| ${it.name} | ${it.quantity} ${it.unit || ""} | KSh ${it.revenue.toLocaleString()} |`
-          )
+            `| ${it.name} | ${it.quantity} ${it.unit || ""} | KSh ${it.revenue.toLocaleString()} |`,
+          ),
         );
       } else {
         lines.push("_No top items for this period._");
@@ -907,8 +910,8 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
         lines.push("|---|---|---:|");
         summary.daily.forEach((d) =>
           lines.push(
-            `| ${d._id.date} | ${d._id.type} | KSh ${d.total.toLocaleString()} |`
-          )
+            `| ${d._id.date} | ${d._id.type} | KSh ${d.total.toLocaleString()} |`,
+          ),
         );
       } else {
         lines.push("_No daily data for this period._");
@@ -928,7 +931,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename=sokotally-ai-report-${new Date().toISOString().split("T")[0]}.pdf`
+        `attachment; filename=sokotally-ai-report-${new Date().toISOString().split("T")[0]}.pdf`,
       );
 
       // Parse content for PDF rendering
@@ -942,7 +945,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
         .font("Helvetica")
         .text(
           `Period: ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()}`,
-          { align: "center" }
+          { align: "center" },
         );
       doc.moveDown(2);
 
@@ -966,7 +969,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
       if (summary.topItems.length > 0) {
         summary.topItems.forEach((item, idx) => {
           doc.text(
-            `${idx + 1}. ${item.name} - Qty: ${item.quantity} ${item.unit || ""} - Revenue: KSh ${item.revenue.toLocaleString()}`
+            `${idx + 1}. ${item.name} - Qty: ${item.quantity} ${item.unit || ""} - Revenue: KSh ${item.revenue.toLocaleString()}`,
           );
         });
       } else {
@@ -994,7 +997,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
 
         // Extract insights section if present
         const insightsMatch = cleanText.match(
-          /insights?[\s&]*recommendations?[:\n]+([\s\S]+)/i
+          /insights?[\s&]*recommendations?[:\n]+([\s\S]+)/i,
         );
         if (insightsMatch) {
           doc.text(insightsMatch[1].trim(), { align: "left" });
@@ -1022,7 +1025,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
       if (download === "1") {
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="sokotally-ai-report-${new Date().toISOString().split("T")[0]}.html"`
+          `attachment; filename="sokotally-ai-report-${new Date().toISOString().split("T")[0]}.html"`,
         );
       }
       return res.send(body);
@@ -1033,7 +1036,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
     if (download === "1") {
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="sokotally-ai-report-${new Date().toISOString().split("T")[0]}.md"`
+        `attachment; filename="sokotally-ai-report-${new Date().toISOString().split("T")[0]}.md"`,
       );
     }
     return res.send(body);
@@ -1087,7 +1090,7 @@ router.get("/reports/pdf", authMiddleware, async (req, res, next) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=sokotally-report-${new Date().toISOString().split("T")[0]}.pdf`
+      `attachment; filename=sokotally-report-${new Date().toISOString().split("T")[0]}.pdf`,
     );
 
     doc.fontSize(18).text("SokoTally Business Report", { align: "center" });
@@ -1095,7 +1098,7 @@ router.get("/reports/pdf", authMiddleware, async (req, res, next) => {
     doc
       .fontSize(10)
       .text(
-        `Period: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`
+        `Period: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`,
       );
     doc.moveDown();
 
@@ -1117,7 +1120,7 @@ router.get("/reports/pdf", authMiddleware, async (req, res, next) => {
         doc
           .fontSize(10)
           .text(
-            `${it._id} - Qty: ${it.quantity} - Revenue: KSh ${it.revenue.toLocaleString()}`
+            `${it._id} - Qty: ${it.quantity} - Revenue: KSh ${it.revenue.toLocaleString()}`,
           );
       });
     }
@@ -1162,7 +1165,7 @@ router.get("/export", authMiddleware, async (req, res, next) => {
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=transactions-${new Date().toISOString().split("T")[0]}.csv`
+      `attachment; filename=transactions-${new Date().toISOString().split("T")[0]}.csv`,
     );
     res.send(csv);
   } catch (e) {
@@ -1207,16 +1210,16 @@ router.get("/export/xlsx", authMiddleware, async (req, res, next) => {
         amount: t.amount || 0,
         customer: t.customerName || "",
         status: t.status || "",
-      })
+      }),
     );
 
     res.setHeader(
       "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=transactions-${new Date().toISOString().split("T")[0]}.xlsx`
+      `attachment; filename=transactions-${new Date().toISOString().split("T")[0]}.xlsx`,
     );
 
     await wb.xlsx.write(res);
