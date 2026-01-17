@@ -68,7 +68,7 @@ const Record = () => {
         });
 
       const sales = normalizedData.filter(
-        (t) => t.type === "sale" || t.type === "income"
+        (t) => t.type === "sale" || t.type === "income",
       );
       const expenses = normalizedData.filter((t) => t.type === "expense");
       const debts = normalizedData.filter((t) => t.type === "debt");
@@ -185,10 +185,10 @@ const Record = () => {
                 type === "sales"
                   ? "bg-green-100 dark:bg-green-900/30"
                   : type === "expenses"
-                  ? "bg-red-100 dark:bg-red-900/30"
-                  : type === "debts"
-                  ? "bg-purple-100 dark:bg-purple-900/30"
-                  : "bg-amber-100 dark:bg-amber-900/30"
+                    ? "bg-red-100 dark:bg-red-900/30"
+                    : type === "debts"
+                      ? "bg-purple-100 dark:bg-purple-900/30"
+                      : "bg-amber-100 dark:bg-amber-900/30"
               }`}
             >
               <svg
@@ -219,17 +219,22 @@ const Record = () => {
                     d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
                   />
                 )}
+              </svg>
+            </div>
+            <div>
               <span
                 className={`text-xl font-semibold ${
                   type === "sales"
                     ? "text-emerald-600 dark:text-emerald-400"
                     : type === "expenses"
-                    ? "text-red-600 dark:text-red-400"
-                    : type === "debts"
-                    ? "text-purple-600 dark:text-purple-400"
-                    : "text-amber-600 dark:text-amber-400"
+                      ? "text-red-600 dark:text-red-400"
+                      : type === "debts"
+                        ? "text-purple-600 dark:text-purple-400"
+                        : "text-amber-600 dark:text-amber-400"
                 }`}
               >
+                {t.description}
+              </span>
               <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-1">
                 {t.date}{" "}
                 {t.status && (
@@ -392,17 +397,39 @@ const Record = () => {
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Sales", value: stats.sales, color: "text-green-600 dark:text-green-400", bg: "bg-green-50 dark:bg-green-900/20" },
-            { label: "Expenses", value: stats.expenses, color: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-900/20" },
-            { label: "Profit", value: stats.profit, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20" },
-            { label: "Debts", value: stats.debts, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20" },
+            {
+              label: "Sales",
+              value: stats.sales,
+              color: "text-green-600 dark:text-green-400",
+              bg: "bg-green-50 dark:bg-green-900/20",
+            },
+            {
+              label: "Expenses",
+              value: stats.expenses,
+              color: "text-red-600 dark:text-red-400",
+              bg: "bg-red-50 dark:bg-red-900/20",
+            },
+            {
+              label: "Profit",
+              value: stats.profit,
+              color: "text-blue-600 dark:text-blue-400",
+              bg: "bg-blue-50 dark:bg-blue-900/20",
+            },
+            {
+              label: "Debts",
+              value: stats.debts,
+              color: "text-orange-600 dark:text-orange-400",
+              bg: "bg-orange-50 dark:bg-orange-900/20",
+            },
           ].map((stat, i) => (
             <div
               key={i}
               className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex items-center gap-2 mb-3">
-                <div className={`w-2 h-2 ${stat.bg.replace('bg-', 'bg-').replace('/20', '')} rounded-full`}></div>
+                <div
+                  className={`w-2 h-2 ${stat.bg.replace("bg-", "bg-").replace("/20", "")} rounded-full`}
+                ></div>
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   {stat.label}
                 </p>
@@ -417,10 +444,26 @@ const Record = () => {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: "Add Sale", type: "sale", bg: "bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600" },
-            { label: "Add Expense", type: "expense", bg: "bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600" },
-            { label: "Add Debt", type: "debt", bg: "bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600" },
-            { label: "Add Loan", type: "loan", bg: "bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600" },
+            {
+              label: "Add Sale",
+              type: "sale",
+              bg: "bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600",
+            },
+            {
+              label: "Add Expense",
+              type: "expense",
+              bg: "bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600",
+            },
+            {
+              label: "Add Debt",
+              type: "debt",
+              bg: "bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600",
+            },
+            {
+              label: "Add Loan",
+              type: "loan",
+              bg: "bg-orange-600 hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600",
+            },
           ].map((action, i) => (
             <button
               key={i}
@@ -443,32 +486,13 @@ const Record = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                  <span className="text-lg text-green-600 dark:text-green-400 font-bold">+</span>
+                  <span className="text-lg text-green-600 dark:text-green-400 font-bold">
+                    +
+                  </span>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Sales ({categorized.sales.length})
                 </h3>
-              </div>
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    Sales
-                  </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {categorized.sales.length} transactions
-                  </p>
-                </div>
               </div>
               {categorized.sales.length === 0 ? (
                 <div className="bg-white dark:bg-slate-900 rounded-xl p-10 text-center border border-gray-200 dark:border-slate-800">
@@ -504,30 +528,13 @@ const Record = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                  <span className="text-lg text-red-600 dark:text-red-400 font-bold">−</span>
+                  <span className="text-lg text-red-600 dark:text-red-400 font-bold">
+                    −
+                  </span>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Expenses ({categorized.expenses.length})
                 </h3>
-              </div>
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    Expenses
-                  </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {categorized.expenses.length} transactions
-                  </p>
-                </div>
               </div>
               {categorized.expenses.length === 0 ? (
                 <div className="bg-white dark:bg-slate-900 rounded-xl p-10 text-center border border-gray-200 dark:border-slate-800">
@@ -564,20 +571,13 @@ const Record = () => {
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-                    <span className="text-lg text-purple-600 dark:text-purple-400 font-bold">↓</span>
+                    <span className="text-lg text-purple-600 dark:text-purple-400 font-bold">
+                      ↓
+                    </span>
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Debts ({categorized.debts.length})
                   </h3>
-                </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                      Debts
-                    </h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {categorized.debts.length} transactions
-                    </p>
-                  </div>
                 </div>
                 <div className="space-y-3">
                   {categorized.debts.map((t) => (
@@ -592,7 +592,9 @@ const Record = () => {
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
-                    <span className="text-lg text-orange-600 dark:text-orange-400 font-bold">↑</span>
+                    <span className="text-lg text-orange-600 dark:text-orange-400 font-bold">
+                      ↑
+                    </span>
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Loans ({categorized.loans.length})
