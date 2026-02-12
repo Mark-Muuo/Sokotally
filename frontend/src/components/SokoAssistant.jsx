@@ -12,13 +12,17 @@ const SokoAssistant = () => {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [pendingTransaction, setPendingTransaction] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [pendingStock, setPendingStock] = useState(null);
+  const [showStockConfirmation, setShowStockConfirmation] = useState(false);
   const messagesEndRef = useRef(null);
   const prevMessagesCount = useRef(messages.length);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
-  const audioChunksRef = useRef([]);
   const recordingIntervalRef = useRef(null);
   const activeAudioRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const interimTranscriptRef = useRef("");
+  const silenceTimerRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -39,7 +43,23 @@ const SokoAssistant = () => {
 
   // Cleanup voice recording on unmount
   useEffect(() => {
+    // Load voices for TTS
+    if ("speechSynthesis" in window) {
+      // Chrome loads voices asynchronously
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+
     return () => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
       if (
         mediaRecorderRef.current &&
         mediaRecorderRef.current.state !== "inactive"
@@ -124,7 +144,7 @@ const SokoAssistant = () => {
 
         if (response.status === 401 || errorData.code === "INVALID_TOKEN") {
           throw new Error(
-            "Your session has expired. Please log out and log back in."
+            "Your session has expired. Please log out and log back in.",
           );
         }
 
@@ -140,12 +160,28 @@ const SokoAssistant = () => {
 
       // Check if there's a pending transaction that needs confirmation
       if (data.pendingTransaction) {
+        console.log(
+          "[CONFIRMATION] Setting pending transaction:",
+          data.pendingTransaction,
+        );
         setPendingTransaction({
           ...data.pendingTransaction,
           conversationId: data.conversationId,
           userMessage: userMessage,
         });
         setShowConfirmation(true);
+        console.log("[CONFIRMATION] showConfirmation set to true");
+      }
+
+      if (data.pendingStock) {
+        console.log("[CONFIRMATION] Setting pending stock:", data.pendingStock);
+        setPendingStock({
+          ...data.pendingStock,
+          conversationId: data.conversationId,
+          userMessage: userMessage,
+        });
+        setShowStockConfirmation(true);
+        console.log("[CONFIRMATION] showStockConfirmation set to true");
       }
 
       return data.reply;
@@ -155,23 +191,24 @@ const SokoAssistant = () => {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+  // Core send function that accepts text directly (used by auto-send)
+  const sendMessage = async (messageText) => {
+    if (!messageText.trim() || isLoading) return;
 
     const userMessage = {
       id: Date.now(),
       type: "user",
-      content: inputValue,
+      content: messageText.trim(),
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    const messageText = inputValue;
     setInputValue("");
     setIsLoading(true);
 
     try {
-      const aiResponseText = await sendToBackend(messageText);
+      console.log("[SEND] Sending message:", messageText);
+      const aiResponseText = await sendToBackend(messageText.trim());
       const aiResponse = {
         id: Date.now() + 1,
         type: "ai",
@@ -179,7 +216,11 @@ const SokoAssistant = () => {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiResponse]);
+
+      // Automatically speak the AI response
+      speakWithBrowserTTS(aiResponseText);
     } catch (error) {
+      console.error("[SEND] Error:", error);
       const errorResponse = {
         id: Date.now() + 1,
         type: "ai",
@@ -192,6 +233,11 @@ const SokoAssistant = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isLoading) return;
+    await sendMessage(inputValue);
   };
 
   const handleKeyPress = (e) => {
@@ -222,7 +268,7 @@ const SokoAssistant = () => {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        await response.json();
         const confirmMessage = {
           id: Date.now() + 2,
           type: "ai",
@@ -239,7 +285,7 @@ const SokoAssistant = () => {
       } else {
         throw new Error("Failed to save transaction");
       }
-    } catch (error) {
+    } catch {
       const errorMessage = {
         id: Date.now() + 2,
         type: "ai",
@@ -251,6 +297,60 @@ const SokoAssistant = () => {
       setShowConfirmation(false);
       setPendingTransaction(null);
     }
+  };
+
+  const handleConfirmStock = async () => {
+    try {
+      const token = getValidToken();
+
+      const response = await fetch(`${API_BASE}/chat/confirm-stock`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          stockData: pendingStock,
+          conversationId: pendingStock.conversationId,
+        }),
+      });
+
+      if (response.ok) {
+        const confirmMessage = {
+          id: Date.now() + 3,
+          type: "ai",
+          content: `Stock updated successfully! ${pendingStock.actionType.replace("_", " ")} for ${pendingStock.itemName} (${pendingStock.quantity} ${pendingStock.unit}).`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, confirmMessage]);
+      } else {
+        throw new Error("Failed to save stock update");
+      }
+    } catch {
+      const errorMessage = {
+        id: Date.now() + 3,
+        type: "ai",
+        content: "Sorry, I couldn't save the stock update. Please try again.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setShowStockConfirmation(false);
+      setPendingStock(null);
+    }
+  };
+
+  const handleCancelStock = () => {
+    const cancelMessage = {
+      id: Date.now() + 3,
+      type: "ai",
+      content:
+        "No problem! Stock update not saved. Let me know if you need anything else.",
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, cancelMessage]);
+    setShowStockConfirmation(false);
+    setPendingStock(null);
   };
 
   // Cancel transaction
@@ -268,33 +368,10 @@ const SokoAssistant = () => {
   };
 
   // Voice recording functionality (MediaRecorder + backend transcription)
-  const checkAudioRecordingSupport = () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      alert(
-        "Audio recording is not supported in your browser. Please use a modern browser."
-      );
-      return false;
-    }
-    if (typeof MediaRecorder === "undefined") {
-      alert(
-        "Audio recording is not supported in your browser. Please use a modern browser."
-      );
-      return false;
-    }
-    return true;
-  };
-
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const cleanupAudioStream = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
   };
 
   const stopAudioPlayback = () => {
@@ -309,8 +386,9 @@ const SokoAssistant = () => {
   };
 
   const detectSpeechLanguage = (text) => {
+    // Enhanced Swahili detection with more common words
     const swahiliPattern =
-      /\b(nimeuza|nilinunua|leo|shilingi|pesa|habari|asante|karibu|sawa|je)\b/i;
+      /\b(nimeuza|nilinunua|leo|shilingi|pesa|habari|asante|karibu|sawa|je|nipe|mimi|wewe|nataka|kuja|kwenda|chukua|lipa|deni|mkopo|bidhaa|soko|bei|ngapi|shamba|mazao|nyanya|vitunguu|sukari|unga|mahindi|nazi|mtama|kunde|maharage)\b/i;
     return swahiliPattern.test(text) ? "sw-KE" : "en-US";
   };
 
@@ -321,9 +399,120 @@ const SokoAssistant = () => {
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = detectSpeechLanguage(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1.0;
+
+    // Prioritize Kiswahili but detect language
+    const detectedLang = detectSpeechLanguage(text);
+    utterance.lang = detectedLang;
+
+    // Find an African male voice
+    const voices = window.speechSynthesis.getVoices();
+
+    // Log available voices for debugging
+    console.log(
+      "[TTS] Available voices:",
+      voices.map((v) => `${v.name} (${v.lang})`).join(", "),
+    );
+
+    // African locale codes to prioritize
+    const africanLocales = [
+      "sw",
+      "sw-KE",
+      "sw-TZ", // Swahili
+      "en-KE",
+      "en-NG",
+      "en-ZA", // African English variants
+      "en-GH",
+      "en-TZ",
+      "en-UG", // More African English
+      "zu",
+      "zu-ZA", // Zulu
+      "af",
+      "af-ZA", // Afrikaans
+      "yo", // Yoruba
+      "ha", // Hausa
+    ];
+
+    const femaleKeywords = [
+      "female",
+      "woman",
+      "girl",
+      "zira",
+      "hazel",
+      "susan",
+      "samantha",
+      "karen",
+      "fiona",
+      "moira",
+      "tessa",
+      "victoria",
+      "grandma",
+      "alice",
+      "catherine",
+      "ellen",
+      "jenny",
+      "sarah",
+      "emma",
+      "aria",
+      "nicky",
+      "emily",
+    ];
+
+    const isFemale = (voice) => {
+      const name = voice.name.toLowerCase();
+      return femaleKeywords.some((kw) => name.includes(kw));
+    };
+
+    const isAfricanLocale = (lang) => {
+      return africanLocales.some((loc) => lang.startsWith(loc) || lang === loc);
+    };
+
+    let selectedVoice = null;
+
+    // Priority 1: Swahili voice (non-female)
+    selectedVoice = voices.find((v) => v.lang.startsWith("sw") && !isFemale(v));
+    // Priority 2: Any Swahili voice
+    if (!selectedVoice)
+      selectedVoice = voices.find((v) => v.lang.startsWith("sw"));
+    // Priority 3: African English male voice (en-KE, en-NG, en-ZA, etc.)
+    if (!selectedVoice)
+      selectedVoice = voices.find(
+        (v) =>
+          isAfricanLocale(v.lang) && v.lang.startsWith("en") && !isFemale(v),
+      );
+    // Priority 4: Any African locale voice
+    if (!selectedVoice)
+      selectedVoice = voices.find(
+        (v) => isAfricanLocale(v.lang) && !isFemale(v),
+      );
+    // Priority 5: English (India/non-US/non-UK) male — closer accent
+    if (!selectedVoice)
+      selectedVoice = voices.find(
+        (v) =>
+          v.lang.startsWith("en") &&
+          !v.lang.includes("US") &&
+          !v.lang.includes("GB") &&
+          !isFemale(v),
+      );
+    // Priority 6: Any non-female English voice
+    if (!selectedVoice)
+      selectedVoice = voices.find(
+        (v) => v.lang.startsWith("en") && !isFemale(v),
+      );
+    // Priority 7: Any English voice at all
+    if (!selectedVoice)
+      selectedVoice = voices.find((v) => v.lang.startsWith("en"));
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      console.log(
+        "[TTS] Selected voice:",
+        selectedVoice.name,
+        selectedVoice.lang,
+      );
+    }
+
+    utterance.rate = 0.88; // Slightly slower for natural African cadence
+    utterance.pitch = 0.75; // Lower pitch for deep male voice
     utterance.volume = 1.0;
 
     utterance.onend = () => setIsSpeaking(false);
@@ -333,7 +522,8 @@ const SokoAssistant = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  const playAssistantResponse = async (text) => {
+  // TTS playback function - currently unused but available for future use
+  const _playAssistantResponse = async (text) => {
     stopAudioPlayback();
 
     try {
@@ -374,124 +564,42 @@ const SokoAssistant = () => {
       };
 
       await audio.play();
-    } catch (error) {
+    } catch {
       speakWithBrowserTTS(text);
     }
   };
 
-  const handleVoiceUpload = async (audioBlob) => {
-    try {
-      const token = getValidToken();
-      if (!token) {
-        throw new Error("You are not logged in. Please sign in to continue.");
-      }
-
-      setIsLoading(true);
-
-      const formData = new FormData();
-      formData.append("audio", audioBlob, `voice-${Date.now()}.webm`);
-      if (currentConversationId) {
-        formData.append("conversationId", currentConversationId);
-      }
-
-      const response = await fetch(`${API_BASE}/chat/voice`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to process voice message");
-      }
-
-      const data = await response.json();
-
-      if (data.conversationId && !currentConversationId) {
-        setCurrentConversationId(data.conversationId);
-      }
-
-      if (data.transcription) {
-        const userVoiceMessage = {
-          id: Date.now(),
-          type: "user",
-          content: data.transcription,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, userVoiceMessage]);
-      }
-
-      const aiResponse = {
-        id: Date.now() + 1,
-        type: "ai",
-        content: data.reply,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiResponse]);
-
-      if (data.pendingTransaction) {
-        setPendingTransaction({
-          ...data.pendingTransaction,
-          conversationId: data.conversationId,
-          userMessage: data.transcription,
-        });
-        setShowConfirmation(true);
-      }
-
-      if (data.reply) {
-        await playAssistantResponse(data.reply);
-      }
-    } catch (error) {
-      const errorMessage = {
-        id: Date.now() + 2,
-        type: "ai",
-        content:
-          error.message ||
-          "Sorry, I had trouble processing the voice message. Please try again.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const startVoiceRecording = async () => {
-    if (!checkAudioRecordingSupport() || isRecording) return;
+    if (isRecording) return;
+
+    // Check for Web Speech API support
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert(
+        "Speech recognition is not supported in your browser. Please use Chrome, Brave, Edge, or Safari.",
+      );
+      return;
+    }
 
     if (isSpeaking) {
       stopAudioPlayback();
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
+      const recognition = new SpeechRecognition();
 
-      const preferredTypes = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/ogg;codecs=opus",
-      ];
-      const supportedType = preferredTypes.find((type) =>
-        MediaRecorder.isTypeSupported(type)
-      );
+      // Configure for Kiswahili with English fallback
+      recognition.lang = "sw-KE"; // Primary: Kiswahili (Kenya)
+      recognition.continuous = true; // Keep listening
+      recognition.interimResults = true; // Get partial results
+      recognition.maxAlternatives = 3; // Get multiple alternatives
 
-      const recorder = new MediaRecorder(
-        stream,
-        supportedType ? { mimeType: supportedType } : undefined
-      );
+      interimTranscriptRef.current = "";
+      const SILENCE_DELAY = 1500; // Stop after 1.5 seconds of silence
 
-      audioChunksRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onstart = () => {
+      recognition.onstart = () => {
         setIsRecording(true);
         setRecordingDuration(0);
         if (recordingIntervalRef.current) {
@@ -502,46 +610,122 @@ const SokoAssistant = () => {
         }, 1000);
       };
 
-      recorder.onerror = (event) => {
-        console.error("Audio recording error:", event.error);
-        setIsRecording(false);
-        cleanupAudioStream();
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + " ";
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Update input with interim results (show what's being recognized)
+        if (interimTranscript) {
+          setInputValue(interimTranscriptRef.current + interimTranscript);
+
+          // Reset silence timer on new speech
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+          }
+        }
+
+        // Add final transcript to accumulated text
+        if (finalTranscript) {
+          interimTranscriptRef.current += finalTranscript;
+          setInputValue(interimTranscriptRef.current);
+
+          // Start silence detection timer
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+          }
+          silenceTimerRef.current = setTimeout(() => {
+            // User stopped speaking - automatically send message
+            if (interimTranscriptRef.current.trim()) {
+              recognition.stop();
+            }
+          }, SILENCE_DELAY);
+        }
       };
 
-      recorder.onstop = () => {
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+
+        // Handle different error types
+        if (event.error === "network") {
+          console.warn(
+            "Network error - Speech recognition requires internet connection",
+          );
+          // Don't show alert for network errors, just stop recording
+          setIsRecording(false);
+          // Show message in the input instead
+          if (!inputValue) {
+            setInputValue(
+              "(Network error - please check your internet connection and try again)",
+            );
+            setTimeout(() => setInputValue(""), 3000);
+          }
+        } else if (
+          event.error === "not-allowed" ||
+          event.error === "service-not-allowed"
+        ) {
+          alert(
+            "Microphone access denied. Please allow microphone permissions in your browser settings.",
+          );
+          setIsRecording(false);
+        } else if (event.error === "language-not-supported") {
+          // Try falling back to English
+          recognition.lang = "en-US";
+          console.log("Kiswahili not supported, falling back to English");
+        } else if (event.error === "no-speech") {
+          console.log("No speech detected");
+          setIsRecording(false);
+        } else if (event.error !== "aborted") {
+          console.error("Unhandled speech recognition error:", event.error);
+          setIsRecording(false);
+        }
+      };
+
+      recognition.onend = () => {
         if (recordingIntervalRef.current) {
           clearInterval(recordingIntervalRef.current);
           recordingIntervalRef.current = null;
         }
         setIsRecording(false);
 
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
-        });
-        audioChunksRef.current = [];
-
-        cleanupAudioStream();
-
-        if (audioBlob.size > 0) {
-          handleVoiceUpload(audioBlob);
+        // Auto-send using the transcript from the ref directly
+        const finalText = interimTranscriptRef.current.trim();
+        interimTranscriptRef.current = "";
+        if (finalText) {
+          console.log("[VOICE] Auto-sending transcript:", finalText);
+          sendMessage(finalText);
         }
       };
 
-      mediaRecorderRef.current = recorder;
-      recorder.start(250);
+      recognitionRef.current = recognition;
+      recognition.start();
     } catch (err) {
-      console.error("Voice recording setup error:", err);
-      cleanupAudioStream();
+      console.error("Voice recognition setup error:", err);
       alert(
-        "Failed to start voice recording. Please check microphone permissions."
+        "Failed to start voice recognition. Please check microphone permissions.",
       );
     }
   };
 
   const stopVoiceRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
     }
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    // Clear the accumulated transcript
+    interimTranscriptRef.current = "";
   };
 
   const handleVoiceButton = () => {
@@ -564,6 +748,38 @@ const SokoAssistant = () => {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+    });
+  };
+
+  // Format message content to make URLs clickable
+  const formatMessageContent = (content) => {
+    if (!content) return "";
+
+    // Regular expression to match URLs
+    const urlRegex = /(https?:\/\/[^\s]+|http:\/\/localhost:\d+\/[^\s]+)/g;
+
+    // Split content by URLs
+    const parts = content.split(urlRegex);
+
+    return parts.map((part, index) => {
+      // If this part is a URL, make it a clickable link
+      if (part && part.match(urlRegex)) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
+          >
+            {part.includes("download-report")
+              ? "📥 Download CSV Report"
+              : "Open Link"}
+          </a>
+        );
+      }
+      // Otherwise, return the text as-is
+      return part;
     });
   };
 
@@ -611,9 +827,9 @@ const SokoAssistant = () => {
                         </div>
                         <div className="flex-1 max-w-[85%] md:max-w-[75%]">
                           <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 px-5 py-3 rounded-2xl rounded-tl-sm shadow-sm">
-                            <p className="text-sm md:text-base text-gray-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
-                              {message.content}
-                            </p>
+                            <div className="text-sm md:text-base text-gray-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
+                              {formatMessageContent(message.content)}
+                            </div>
                             <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2">
                               {formatTimestamp(message.timestamp)}
                             </p>
@@ -662,8 +878,8 @@ const SokoAssistant = () => {
                 {isRecording && (
                   <div className="text-center mb-3">
                     <p className="text-red-400 text-sm font-medium animate-pulse">
-                      Recording {formatDuration(recordingDuration)}. Tap the
-                      microphone to stop.
+                      🎤 Listening... (Kiswahili/English) •{" "}
+                      {formatDuration(recordingDuration)}. Tap mic to stop.
                     </p>
                   </div>
                 )}
@@ -713,7 +929,11 @@ const SokoAssistant = () => {
                         ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
                         : "bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800"
                     }`}
-                    title={isRecording ? "Stop recording" : "Start voice input"}
+                    title={
+                      isRecording
+                        ? "Stop listening"
+                        : "Start voice input (Kiswahili/English) - Requires internet"
+                    }
                   >
                     <svg
                       width="20"
@@ -781,7 +1001,7 @@ const SokoAssistant = () => {
                 <p className="text-center text-slate-500 text-xs sm:text-sm mt-4">
                   <span>
                     Ask specific questions or tell me about your sales • Voice
-                    input & voice messages available
+                    input (Kiswahili/English) requires internet connection
                   </span>
                 </p>
               </div>
@@ -875,6 +1095,76 @@ const SokoAssistant = () => {
                 </button>
                 <button
                   onClick={handleConfirmTransaction}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
+                >
+                  Yes, Save It
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Confirmation Modal */}
+      {showStockConfirmation && pendingStock && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="bg-gradient-to-r from-green-600 to-blue-600 p-6">
+              <h3 className="text-xl font-bold text-white">
+                Confirm Stock Update
+              </h3>
+              <p className="text-blue-100 text-sm mt-1">
+                Please verify the stock details below
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                    Action:
+                  </span>
+                  <span className="text-gray-900 dark:text-white font-bold capitalize">
+                    {pendingStock.actionType.replace("_", " ")}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                    Item:
+                  </span>
+                  <span className="text-gray-900 dark:text-white font-bold">
+                    {pendingStock.itemName}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                    Quantity:
+                  </span>
+                  <span className="text-gray-900 dark:text-white font-bold">
+                    {pendingStock.quantity} {pendingStock.unit}
+                  </span>
+                </div>
+                {pendingStock.supplierName && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                      Supplier:
+                    </span>
+                    <span className="text-gray-900 dark:text-white font-bold">
+                      {pendingStock.supplierName}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleCancelStock}
+                  className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
+                >
+                  No, Cancel
+                </button>
+                <button
+                  onClick={handleConfirmStock}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
                 >
                   Yes, Save It

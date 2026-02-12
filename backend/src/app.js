@@ -7,9 +7,12 @@ import { authRouter } from "./routes/auth.js";
 import itemsRouter from "./routes/items.js";
 import transactionsRouter from "./routes/transactions.js";
 import chatRouter from "./routes/chat.js";
+import adminRouter from "./routes/admin.js";
+import inventoryRouter from "./routes/inventory.js";
 
 // Middleware
 import errorHandler from "./middleware/errorHandler.js";
+import { performanceTrackingMiddleware } from "./services/healthMonitor.js";
 
 const app = express();
 
@@ -39,6 +42,7 @@ app.use(
 // Core middleware
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
+app.use(performanceTrackingMiddleware);
 
 // Health
 app.get("/", (_req, res) =>
@@ -51,7 +55,9 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/auth", authRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/transactions", transactionsRouter);
+app.use("/api/inventory", inventoryRouter);
 app.use("/chat", chatRouter);
+app.use("/api/admin", adminRouter);
 
 // 404 handler
 app.use((req, res, next) => {

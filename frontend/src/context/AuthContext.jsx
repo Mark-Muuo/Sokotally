@@ -77,11 +77,21 @@ export const AuthProvider = ({ children }) => {
 		signIn: async ({ phone, password }) => {
 			setLoading(true); setError('');
 			try {
-				const { token } = await apiLogin({ phone, password });
+				const response = await apiLogin({ phone, password });
+				const { token, user: loginUser } = response;
 				saveToken(token);
-				const me = await getProfile();
-				setUser(me.user || me);
-				return me.user || me;
+				// Use user data from login response if available, otherwise fetch from /me
+				let userData;
+				if (loginUser && loginUser.id) {
+					userData = loginUser;
+					setUser(loginUser);
+				} else {
+					const me = await getProfile();
+					userData = me.user || me;
+					setUser(userData);
+				}
+				console.log("SignIn - Final user data:", userData);
+				return userData;
 			} catch (e) { 
 				setError(e.message || 'Login failed'); 
 				// Clear token if login failed
@@ -101,11 +111,21 @@ export const AuthProvider = ({ children }) => {
 		signInWithOTP: async ({ phone, otp }) => {
 			setLoading(true); setError('');
 			try {
-				const { token } = await verifyOTPLogin({ phone, otp });
+				const response = await verifyOTPLogin({ phone, otp });
+				const { token, user: loginUser } = response;
 				saveToken(token);
-				const me = await getProfile();
-				setUser(me.user || me);
-				return me.user || me;
+				// Use user data from OTP response if available, otherwise fetch from /me
+				let userData;
+				if (loginUser && loginUser.id) {
+					userData = loginUser;
+					setUser(loginUser);
+				} else {
+					const me = await getProfile();
+					userData = me.user || me;
+					setUser(userData);
+				}
+				console.log("SignInWithOTP - Final user data:", userData);
+				return userData;
 			} catch (e) { 
 				setError(e.message || 'OTP verification failed'); 
 				// Clear token if OTP verification failed

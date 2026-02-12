@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Transaction from "../models/Transaction.js";
 import Debt from "../models/Debt.js";
 import Customer from "../models/Customer.js";
+import Item from "../models/Item.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { getLLMResponse } from "../services/llmService.js";
 
@@ -17,10 +18,10 @@ const toObjectId = (id) => {
   }
 };
 
-// List with basic filters
+// List with basic filters and pagination
 router.get("/", authMiddleware, async (req, res, next) => {
   try {
-    const { from, to, type } = req.query;
+    const { from, to, type, page = 1, limit = 10 } = req.query;
     const query = { userId: toObjectId(req.userId) };
     if (type) query.type = type;
     if (from || to) {
@@ -28,7 +29,13 @@ router.get("/", authMiddleware, async (req, res, next) => {
       if (from) query.occurredAt.$gte = new Date(from);
       if (to) query.occurredAt.$lte = new Date(to);
     }
-    const rows = await Transaction.find(query).sort({ occurredAt: -1 });
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const rows = await Transaction.find(query)
+      .sort({ occurredAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
     res.json(rows);
   } catch (e) {
     next(e);
@@ -69,6 +76,67 @@ router.delete("/:id", authMiddleware, async (req, res, next) => {
       userId: toObjectId(req.userId),
     });
     res.json({ ok: out.deletedCount === 1 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Get top customers with pagination
+router.get("/customers/top", authMiddleware, async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const customers = await Transaction.aggregate([
+      {
+        $match: {
+          userId: toObjectId(req.userId),
+          type: { $in: ["sale", "income"] },
+          customer: { $exists: true, $ne: null, $ne: "" },
+        },
+      },
+      {
+        $group: {
+          _id: "$customer",
+          totalSpent: { $sum: "$amount" },
+          transactionCount: { $sum: 1 },
+        },
+      },
+      { $sort: { totalSpent: -1 } },
+      { $skip: skip },
+      { $limit: parseInt(limit) },
+    ]);
+
+    res.json(customers);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Get debts
+router.get("/debts", authMiddleware, async (req, res, next) => {
+  try {
+    const { limit = 20 } = req.query;
+    const userId = toObjectId(req.userId);
+
+    console.log("[DEBTS ENDPOINT] userId:", userId);
+
+    // Fetch ONLY UNPAID debts from transactions (not the Debt model)
+    // Debts given = transactions where type="debt", has customerName, and status is NOT "paid"
+    const debtsGiven = await Transaction.find({
+      userId,
+      type: "debt",
+      customerName: { $exists: true, $ne: null, $ne: "" },
+      status: { $ne: "paid" }, // Only unpaid debts
+    })
+      .sort({ occurredAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    console.log("[DEBTS ENDPOINT] Found unpaid debtsGiven:", debtsGiven.length);
+    console.log("[DEBTS ENDPOINT] Sample:", debtsGiven.slice(0, 2));
+
+    res.json(debtsGiven);
   } catch (e) {
     next(e);
   }
@@ -791,7 +859,18 @@ router.get("/reports/ai", authMiddleware, async (req, res, next) => {
 
     const dateFilter = { userId, occurredAt: { $gte: start, $lte: end } };
 
-    // Core aggregates
+    // Previous period for comparison (same duration)
+    const periodDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    const previousStart = new Date(start);
+    previousStart.setDate(previousStart.getDate() - periodDays);
+    const previousEnd = new Date(start);
+    previousEnd.setMilliseconds(-1);
+    const previousDateFilter = {
+      userId,
+      occurredAt: { $gte: previousStart, $lte: previousEnd },
+    };
+
+    // Core aggregates - Current Period
     const [salesAgg] = await Transaction.aggregate([
       { $match: { ...dateFilter, type: "income" } },
       { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
@@ -802,6 +881,36 @@ router.get("/reports/ai", authMiddleware, async (req, res, next) => {
       { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
     ]);
 
+    // Previous period for growth calculation
+    const [prevSalesAgg] = await Transaction.aggregate([
+      { $match: { ...previousDateFilter, type: "income" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+
+    const [prevExpensesAgg] = await Transaction.aggregate([
+      { $match: { ...previousDateFilter, type: "expense" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+
+    // Calculate growth percentages
+    const salesGrowth =
+      prevSalesAgg?.total > 0
+        ? (
+            (((salesAgg?.total || 0) - prevSalesAgg.total) /
+              prevSalesAgg.total) *
+            100
+          ).toFixed(1)
+        : 0;
+    const expensesGrowth =
+      prevExpensesAgg?.total > 0
+        ? (
+            (((expensesAgg?.total || 0) - prevExpensesAgg.total) /
+              prevExpensesAgg.total) *
+            100
+          ).toFixed(1)
+        : 0;
+
+    // Top Items
     const topItems = await Transaction.aggregate([
       {
         $match: {
@@ -817,12 +926,48 @@ router.get("/reports/ai", authMiddleware, async (req, res, next) => {
           quantity: { $sum: "$items.quantity" },
           revenue: { $sum: "$items.totalPrice" },
           unit: { $first: "$items.unit" },
+          avgPrice: { $avg: "$items.price" },
         },
       },
       { $sort: { revenue: -1 } },
       { $limit: 10 },
     ]);
 
+    // Top Customers
+    const topCustomers = await Transaction.aggregate([
+      {
+        $match: {
+          ...dateFilter,
+          type: { $in: ["income", "sale"] },
+          customer: { $exists: true, $ne: null, $ne: "" },
+        },
+      },
+      {
+        $group: {
+          _id: "$customer",
+          totalSpent: { $sum: "$amount" },
+          transactionCount: { $sum: 1 },
+        },
+      },
+      { $sort: { totalSpent: -1 } },
+      { $limit: 5 },
+    ]);
+
+    // Expense Breakdown by Category
+    const expenseBreakdown = await Transaction.aggregate([
+      { $match: { ...dateFilter, type: "expense" } },
+      {
+        $group: {
+          _id: { $ifNull: ["$notes", "$category", "Other"] },
+          total: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { total: -1 } },
+      { $limit: 8 },
+    ]);
+
+    // Daily Breakdown
     const dailyBreakdown = await Transaction.aggregate([
       { $match: dateFilter },
       {
@@ -834,40 +979,137 @@ router.get("/reports/ai", authMiddleware, async (req, res, next) => {
             type: "$type",
           },
           total: { $sum: "$amount" },
+          count: { $sum: 1 },
         },
       },
       { $sort: { "_id.date": 1 } },
     ]);
 
+    // Inventory Status
+    const inventoryItems = await Item.find({ userId }).lean();
+    const inventoryStats = {
+      totalItems: inventoryItems.length,
+      totalValue: inventoryItems.reduce(
+        (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0),
+        0,
+      ),
+      lowStock: inventoryItems.filter(
+        (item) => (item.quantity || 0) < (item.lowStockThreshold || 5),
+      ).length,
+      outOfStock: inventoryItems.filter((item) => (item.quantity || 0) === 0)
+        .length,
+    };
+
+    // Outstanding Debts
+    const debts = await Debt.find({ userId, status: { $ne: "paid" } })
+      .populate("customerId", "name")
+      .lean();
+    const debtsStats = {
+      totalOutstanding: debts.reduce(
+        (sum, debt) => sum + (debt.amount || 0),
+        0,
+      ),
+      count: debts.length,
+      topDebtors: debts
+        .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+        .slice(0, 5)
+        .map((d) => ({
+          customer: d.customerId?.name || "Unknown",
+          amount: d.amount,
+          dueDate: d.dueDate,
+          status: d.status,
+        })),
+    };
+
+    // Calculate averages
+    const avgSaleValue =
+      salesAgg?.count > 0 ? salesAgg.total / salesAgg.count : 0;
+    const avgExpenseValue =
+      expensesAgg?.count > 0 ? expensesAgg.total / expensesAgg.count : 0;
+
     const summary = {
       period: {
         start: start.toISOString(),
         end: end.toISOString(),
+        days: periodDays,
       },
       totals: {
         sales: salesAgg?.total || 0,
         expenses: expensesAgg?.total || 0,
         profit: (salesAgg?.total || 0) - (expensesAgg?.total || 0),
+        profitMargin:
+          salesAgg?.total > 0
+            ? (
+                (((salesAgg?.total || 0) - (expensesAgg?.total || 0)) /
+                  (salesAgg?.total || 0)) *
+                100
+              ).toFixed(1)
+            : 0,
+      },
+      growth: {
+        sales: salesGrowth,
+        expenses: expensesGrowth,
+        previousPeriodSales: prevSalesAgg?.total || 0,
+        previousPeriodExpenses: prevExpensesAgg?.total || 0,
       },
       counts: {
         sales: salesAgg?.count || 0,
         expenses: expensesAgg?.count || 0,
+        totalTransactions: (salesAgg?.count || 0) + (expensesAgg?.count || 0),
+      },
+      averages: {
+        saleValue: avgSaleValue,
+        expenseValue: avgExpenseValue,
+        dailySales: salesAgg?.total > 0 ? salesAgg.total / periodDays : 0,
+        dailyExpenses:
+          expensesAgg?.total > 0 ? expensesAgg.total / periodDays : 0,
       },
       topItems: topItems.map((t) => ({
         name: t._id,
         quantity: t.quantity,
         revenue: t.revenue,
         unit: t.unit,
+        avgPrice: t.avgPrice,
       })),
+      topCustomers: topCustomers.map((c) => ({
+        name: c._id,
+        totalSpent: c.totalSpent,
+        transactionCount: c.transactionCount,
+        avgTransactionValue:
+          c.transactionCount > 0 ? c.totalSpent / c.transactionCount : 0,
+      })),
+      expenseBreakdown: expenseBreakdown.map((e) => ({
+        category: e._id,
+        total: e.total,
+        count: e.count,
+        percentage:
+          expensesAgg?.total > 0
+            ? ((e.total / expensesAgg.total) * 100).toFixed(1)
+            : 0,
+      })),
+      inventory: inventoryStats,
+      debts: debtsStats,
       daily: dailyBreakdown,
     };
 
     // Compose prompt
     const systemPrompt =
-      "You are a business analyst creating a clear, concise report for a small shop. Keep it simple and actionable.";
-    const userMessage = `Create a formatted ${format === "html" ? "HTML" : format === "pdf" ? "plain text" : "Markdown"} report titled "SokoTally Business Report" for the following period.
+      "You are a business analyst creating a detailed, insightful report for a small shop owner. Analyze the data thoroughly and provide actionable recommendations based on the actual numbers. Be specific and reference the real data in your insights.";
+    const userMessage = `Create a comprehensive formatted ${format === "html" ? "HTML" : format === "pdf" ? "plain text" : "Markdown"} business report titled "SokoTally AI Business Report" for the following period.
 
-Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections: Overview, Key Metrics, Top Items, Insights & Recommendations.\n- Currency is KSh. Use thousands separators.\n- Keep language simple and friendly.\n- For PDF format, use plain text with clear section headings and bullet points (no markdown syntax).`;
+Business Data (JSON):
+${JSON.stringify(summary, null, 2)}
+
+Requirements:
+- Start with an Executive Summary highlighting the most important findings
+- Sections: Executive Summary, Financial Performance, Sales Analysis, Top Products, Customer Insights, Expense Analysis, Inventory Status, Outstanding Debts, Key Insights & Actionable Recommendations
+- Use real numbers from the data - reference specific growth percentages, profit margins, top items by name
+- Currency is KSh. Use thousands separators (e.g., KSh 125,000)
+- Identify trends, concerns (like low stock items, overdue debts), and opportunities
+- Make recommendations specific to the data (e.g., "Stock more [item name] as it generated KSh X")
+- Keep language clear, professional but friendly
+- For PDF format, use plain text with clear section headings, bullet points, and no markdown syntax
+- Highlight both positive achievements and areas needing attention`;
 
     let body = "";
     let aiGenerated = false;
@@ -881,46 +1123,166 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
       lines.push("# SokoTally Business Report");
       lines.push("");
       lines.push(
-        `Period: ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()}`,
+        `**Period:** ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()} (${summary.period.days} days)`,
       );
       lines.push("");
-      lines.push("## Key Metrics");
-      lines.push(`- Total Sales: KSh ${summary.totals.sales.toLocaleString()}`);
+
+      lines.push("## Executive Summary");
+      lines.push("");
       lines.push(
-        `- Total Expenses: KSh ${summary.totals.expenses.toLocaleString()}`,
+        `Your business generated **KSh ${summary.totals.sales.toLocaleString()}** in sales with a profit margin of **${summary.totals.profitMargin}%**. `,
       );
-      lines.push(`- Net Profit: KSh ${summary.totals.profit.toLocaleString()}`);
+      if (parseFloat(summary.growth.sales) > 0) {
+        lines.push(
+          `Sales grew by **${summary.growth.sales}%** compared to the previous period.`,
+        );
+      } else if (parseFloat(summary.growth.sales) < 0) {
+        lines.push(
+          `⚠️ Sales declined by **${Math.abs(summary.growth.sales)}%** compared to the previous period.`,
+        );
+      }
       lines.push("");
-      lines.push("## Top Items");
+
+      lines.push("## Financial Performance");
+      lines.push("");
+      lines.push(
+        `- **Total Sales:** KSh ${summary.totals.sales.toLocaleString()}`,
+      );
+      lines.push(
+        `- **Total Expenses:** KSh ${summary.totals.expenses.toLocaleString()}`,
+      );
+      lines.push(
+        `- **Net Profit:** KSh ${summary.totals.profit.toLocaleString()}`,
+      );
+      lines.push(`- **Profit Margin:** ${summary.totals.profitMargin}%`);
+      lines.push(`- **Sales Growth:** ${summary.growth.sales}%`);
+      lines.push(
+        `- **Average Daily Sales:** KSh ${summary.averages.dailySales.toLocaleString()}`,
+      );
+      lines.push(
+        `- **Average Sale Value:** KSh ${summary.averages.saleValue.toLocaleString()}`,
+      );
+      lines.push("");
+
+      lines.push("## Top Selling Products");
       if (summary.topItems.length) {
-        lines.push("| Item | Quantity | Revenue |");
-        lines.push("|---|---:|---:|");
-        summary.topItems.forEach((it) =>
+        lines.push("");
+        lines.push("| Rank | Item | Quantity | Revenue | Avg Price |");
+        lines.push("|---:|---|---:|---:|---:|");
+        summary.topItems.forEach((it, idx) =>
           lines.push(
-            `| ${it.name} | ${it.quantity} ${it.unit || ""} | KSh ${it.revenue.toLocaleString()} |`,
+            `| ${idx + 1} | ${it.name} | ${it.quantity} ${it.unit || ""} | KSh ${it.revenue.toLocaleString()} | KSh ${(it.avgPrice || 0).toLocaleString()} |`,
           ),
         );
       } else {
-        lines.push("_No top items for this period._");
+        lines.push("_No product sales recorded for this period._");
       }
       lines.push("");
-      lines.push("## Daily Breakdown");
-      if (summary.daily.length) {
-        lines.push("| Date | Type | Total |");
-        lines.push("|---|---|---:|");
-        summary.daily.forEach((d) =>
+
+      lines.push("## Top Customers");
+      if (summary.topCustomers.length) {
+        lines.push("");
+        summary.topCustomers.forEach((cust, idx) => {
           lines.push(
-            `| ${d._id.date} | ${d._id.type} | KSh ${d.total.toLocaleString()} |`,
+            `${idx + 1}. **${cust.name}** - KSh ${cust.totalSpent.toLocaleString()} (${cust.transactionCount} transactions, avg: KSh ${cust.avgTransactionValue.toLocaleString()})`,
+          );
+        });
+      } else {
+        lines.push("_No customer data available for this period._");
+      }
+      lines.push("");
+
+      lines.push("## Expense Breakdown");
+      if (summary.expenseBreakdown.length) {
+        lines.push("");
+        lines.push("| Category | Amount | % of Total | Transactions |");
+        lines.push("|---|---:|---:|---:|");
+        summary.expenseBreakdown.forEach((exp) =>
+          lines.push(
+            `| ${exp.category} | KSh ${exp.total.toLocaleString()} | ${exp.percentage}% | ${exp.count} |`,
           ),
         );
       } else {
-        lines.push("_No daily data for this period._");
+        lines.push("_No expenses recorded for this period._");
       }
       lines.push("");
-      lines.push("## Insights & Recommendations");
-      lines.push("- Keep recording transactions daily to improve accuracy.");
-      lines.push("- Track best-selling items to maintain enough stock.");
-      lines.push("- Review expenses that are growing week over week.");
+
+      lines.push("## Inventory Status");
+      lines.push("");
+      lines.push(`- **Total Items:** ${summary.inventory.totalItems}`);
+      lines.push(
+        `- **Total Inventory Value:** KSh ${summary.inventory.totalValue.toLocaleString()}`,
+      );
+      if (summary.inventory.lowStock > 0) {
+        lines.push(`- ⚠️ **Low Stock Items:** ${summary.inventory.lowStock}`);
+      }
+      if (summary.inventory.outOfStock > 0) {
+        lines.push(
+          `- 🔴 **Out of Stock Items:** ${summary.inventory.outOfStock}`,
+        );
+      }
+      lines.push("");
+
+      lines.push("## Outstanding Debts");
+      lines.push("");
+      lines.push(
+        `- **Total Outstanding:** KSh ${summary.debts.totalOutstanding.toLocaleString()}`,
+      );
+      lines.push(`- **Number of Debtors:** ${summary.debts.count}`);
+      if (summary.debts.topDebtors.length) {
+        lines.push("");
+        lines.push("**Top Debtors:**");
+        summary.debts.topDebtors.forEach((debtor, idx) => {
+          lines.push(
+            `${idx + 1}. ${debtor.customer} - KSh ${debtor.amount.toLocaleString()} (${debtor.status})`,
+          );
+        });
+      }
+      lines.push("");
+
+      lines.push("## Key Insights & Recommendations");
+      lines.push("");
+
+      // Data-driven insights
+      if (parseFloat(summary.totals.profitMargin) < 20) {
+        lines.push(
+          "- ⚠️ **Profit Margin Alert:** Your profit margin is below 20%. Consider reviewing pricing or reducing expenses.",
+        );
+      }
+      if (parseFloat(summary.growth.sales) < 0) {
+        lines.push(
+          "- 📉 **Sales Decline:** Sales decreased compared to last period. Focus on customer retention and marketing.",
+        );
+      }
+      if (summary.inventory.lowStock > 0) {
+        lines.push(
+          `- 📦 **Stock Alert:** ${summary.inventory.lowStock} items are running low. Restock soon to avoid lost sales.`,
+        );
+      }
+      if (summary.debts.totalOutstanding > summary.totals.profit) {
+        lines.push(
+          "- 💰 **Debt Collection:** Outstanding debts exceed your profit. Prioritize debt collection.",
+        );
+      }
+      if (summary.topItems.length > 0) {
+        const topItem = summary.topItems[0];
+        lines.push(
+          `- ⭐ **Best Performer:** ${topItem.name} generated KSh ${topItem.revenue.toLocaleString()}. Ensure adequate stock.`,
+        );
+      }
+      if (summary.topCustomers.length > 0) {
+        lines.push(
+          `- 👥 **Customer Focus:** Your top customer spent KSh ${summary.topCustomers[0].totalSpent.toLocaleString()}. Consider loyalty rewards.`,
+        );
+      }
+
+      lines.push(
+        "- 📊 Keep recording all transactions daily for accurate insights.",
+      );
+      lines.push(
+        "- 💡 Review your expense breakdown to identify cost-saving opportunities.",
+      );
+
       body = lines.join("\n");
     }
 
@@ -934,7 +1296,7 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
         `attachment; filename=sokotally-ai-report-${new Date().toISOString().split("T")[0]}.pdf`,
       );
 
-      // Parse content for PDF rendering
+      // Header
       doc
         .fontSize(20)
         .font("Helvetica-Bold")
@@ -944,44 +1306,127 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
         .fontSize(10)
         .font("Helvetica")
         .text(
-          `Period: ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()}`,
+          `Period: ${new Date(summary.period.start).toLocaleDateString()} - ${new Date(summary.period.end).toLocaleDateString()} (${summary.period.days} days)`,
           { align: "center" },
         );
       doc.moveDown(2);
 
-      // Key Metrics Section
-      doc.fontSize(14).font("Helvetica-Bold").text("Key Metrics");
+      // Executive Summary
+      doc.fontSize(14).font("Helvetica-Bold").text("Executive Summary");
+      doc.moveDown(0.5);
+      doc.fontSize(10).font("Helvetica");
+      doc.text(
+        `Your business generated KSh ${summary.totals.sales.toLocaleString()} in sales with a profit margin of ${summary.totals.profitMargin}%. `,
+        { continued: false },
+      );
+      if (parseFloat(summary.growth.sales) !== 0) {
+        const direction =
+          parseFloat(summary.growth.sales) > 0 ? "grew" : "declined";
+        doc.text(
+          `Sales ${direction} by ${Math.abs(summary.growth.sales)}% compared to the previous period.`,
+        );
+      }
+      doc.moveDown();
+
+      // Financial Performance
+      doc.fontSize(14).font("Helvetica-Bold").text("Financial Performance");
       doc.moveDown(0.5);
       doc.fontSize(10).font("Helvetica");
       doc.list([
-        `Total Sales: KSh ${summary.totals.sales.toLocaleString()}`,
-        `Total Expenses: KSh ${summary.totals.expenses.toLocaleString()}`,
+        `Total Sales: KSh ${summary.totals.sales.toLocaleString()} (${summary.counts.sales} transactions)`,
+        `Total Expenses: KSh ${summary.totals.expenses.toLocaleString()} (${summary.counts.expenses} transactions)`,
         `Net Profit: KSh ${summary.totals.profit.toLocaleString()}`,
-        `Sales Transactions: ${summary.counts.sales}`,
-        `Expense Transactions: ${summary.counts.expenses}`,
+        `Profit Margin: ${summary.totals.profitMargin}%`,
+        `Sales Growth: ${summary.growth.sales}%`,
+        `Average Daily Sales: KSh ${Math.round(summary.averages.dailySales).toLocaleString()}`,
+        `Average Sale Value: KSh ${Math.round(summary.averages.saleValue).toLocaleString()}`,
       ]);
       doc.moveDown();
 
-      // Top Items Section
+      // Top Selling Items
       doc.fontSize(14).font("Helvetica-Bold").text("Top Selling Items");
       doc.moveDown(0.5);
       doc.fontSize(10).font("Helvetica");
       if (summary.topItems.length > 0) {
-        summary.topItems.forEach((item, idx) => {
+        summary.topItems.slice(0, 5).forEach((item, idx) => {
           doc.text(
-            `${idx + 1}. ${item.name} - Qty: ${item.quantity} ${item.unit || ""} - Revenue: KSh ${item.revenue.toLocaleString()}`,
+            `${idx + 1}. ${item.name} - Qty: ${item.quantity} ${item.unit || ""} - Revenue: KSh ${item.revenue.toLocaleString()} (Avg Price: KSh ${Math.round(item.avgPrice || 0).toLocaleString()})`,
           );
         });
       } else {
-        doc.text("No top items for this period.");
+        doc.text("No product sales for this period.");
       }
       doc.moveDown();
 
-      // AI Insights Section
+      // Top Customers
+      if (summary.topCustomers.length > 0) {
+        doc.fontSize(14).font("Helvetica-Bold").text("Top Customers");
+        doc.moveDown(0.5);
+        doc.fontSize(10).font("Helvetica");
+        summary.topCustomers.forEach((cust, idx) => {
+          doc.text(
+            `${idx + 1}. ${cust.name} - KSh ${cust.totalSpent.toLocaleString()} (${cust.transactionCount} purchases, avg: KSh ${Math.round(cust.avgTransactionValue).toLocaleString()})`,
+          );
+        });
+        doc.moveDown();
+      }
+
+      // Expense Breakdown
+      if (summary.expenseBreakdown.length > 0) {
+        doc.fontSize(14).font("Helvetica-Bold").text("Expense Breakdown");
+        doc.moveDown(0.5);
+        doc.fontSize(10).font("Helvetica");
+        summary.expenseBreakdown.forEach((exp) => {
+          doc.text(
+            `${exp.category}: KSh ${exp.total.toLocaleString()} (${exp.percentage}% of total expenses)`,
+          );
+        });
+        doc.moveDown();
+      }
+
+      // Inventory Status
+      doc.fontSize(14).font("Helvetica-Bold").text("Inventory Status");
+      doc.moveDown(0.5);
+      doc.fontSize(10).font("Helvetica");
+      doc.list([
+        `Total Items in Stock: ${summary.inventory.totalItems}`,
+        `Total Inventory Value: KSh ${summary.inventory.totalValue.toLocaleString()}`,
+        ...(summary.inventory.lowStock > 0
+          ? [
+              `LOW STOCK ALERT: ${summary.inventory.lowStock} items need restocking`,
+            ]
+          : []),
+        ...(summary.inventory.outOfStock > 0
+          ? [`OUT OF STOCK: ${summary.inventory.outOfStock} items unavailable`]
+          : []),
+      ]);
+      doc.moveDown();
+
+      // Outstanding Debts
+      if (summary.debts.count > 0) {
+        doc.fontSize(14).font("Helvetica-Bold").text("Outstanding Debts");
+        doc.moveDown(0.5);
+        doc.fontSize(10).font("Helvetica");
+        doc.text(
+          `Total Outstanding: KSh ${summary.debts.totalOutstanding.toLocaleString()} from ${summary.debts.count} debtors`,
+        );
+        if (summary.debts.topDebtors.length > 0) {
+          doc.moveDown(0.3);
+          doc.text("Top Debtors:");
+          summary.debts.topDebtors.forEach((debtor, idx) => {
+            doc.text(
+              `  ${idx + 1}. ${debtor.customer} - KSh ${debtor.amount.toLocaleString()} (${debtor.status})`,
+            );
+          });
+        }
+        doc.moveDown();
+      }
+
+      // AI Insights & Recommendations
       doc
         .fontSize(14)
         .font("Helvetica-Bold")
-        .text("AI Insights & Recommendations");
+        .text("Key Insights & Recommendations");
       doc.moveDown(0.5);
       doc.fontSize(10).font("Helvetica");
 
@@ -1002,17 +1447,61 @@ Data (JSON):\n\n${JSON.stringify(summary, null, 2)}\n\nRequirements:\n- Sections
         if (insightsMatch) {
           doc.text(insightsMatch[1].trim(), { align: "left" });
         } else {
-          // Show full AI response if no specific insights section
-          doc.text(cleanText, { align: "left" });
+          // Show relevant parts of AI response
+          const sections = cleanText.split(/\n(?=[A-Z])/);
+          const relevantSection = sections.find(
+            (s) =>
+              s.toLowerCase().includes("insight") ||
+              s.toLowerCase().includes("recommendation") ||
+              s.toLowerCase().includes("action"),
+          );
+          if (relevantSection) {
+            doc.text(relevantSection.trim(), { align: "left" });
+          } else {
+            doc.text(cleanText.substring(0, 1000), { align: "left" });
+          }
         }
       } else {
-        // Fallback insights
-        doc.list([
-          "Keep recording transactions daily to improve accuracy.",
-          "Track best-selling items to maintain enough stock.",
-          "Review expenses that are growing week over week.",
-          "Consider promoting your top-selling items to maximize revenue.",
-        ]);
+        // Fallback data-driven insights
+        const insights = [];
+        if (parseFloat(summary.totals.profitMargin) < 20) {
+          insights.push(
+            "- Profit margin is below 20%. Consider reviewing pricing or reducing expenses.",
+          );
+        }
+        if (parseFloat(summary.growth.sales) < 0) {
+          insights.push(
+            "- Sales declined compared to last period. Focus on customer retention and marketing.",
+          );
+        }
+        if (summary.inventory.lowStock > 0) {
+          insights.push(
+            `- ${summary.inventory.lowStock} items are running low. Restock soon to avoid lost sales.`,
+          );
+        }
+        if (summary.debts.totalOutstanding > summary.totals.profit) {
+          insights.push(
+            "- Outstanding debts exceed your profit. Prioritize debt collection.",
+          );
+        }
+        if (summary.topItems.length > 0) {
+          insights.push(
+            `- Best performer: ${summary.topItems[0].name} generated KSh ${summary.topItems[0].revenue.toLocaleString()}. Ensure adequate stock.`,
+          );
+        }
+        if (summary.topCustomers.length > 0) {
+          insights.push(
+            `- Your top customer spent KSh ${summary.topCustomers[0].totalSpent.toLocaleString()}. Consider loyalty rewards.`,
+          );
+        }
+        insights.push(
+          "- Keep recording all transactions daily for accurate insights.",
+        );
+        insights.push(
+          "- Review your expense breakdown to identify cost-saving opportunities.",
+        );
+
+        doc.list(insights);
       }
 
       doc.end();

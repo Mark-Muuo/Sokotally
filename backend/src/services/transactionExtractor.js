@@ -24,10 +24,11 @@ export async function extractTransactionData(userMessage) {
     }
 
     const extracted = JSON.parse(jsonMatch[0]);
-    return validateAndNormalize(extracted);
+    const normalized = validateAndNormalize(extracted);
+    return applyTypeHeuristics(userMessage, normalized);
   } catch (error) {
     console.error("LLM extraction failed, using fallback:", error);
-    return fallbackExtraction(userMessage);
+    return applyTypeHeuristics(userMessage, fallbackExtraction(userMessage));
   }
 }
 
@@ -106,6 +107,34 @@ function validateAndNormalize(data) {
       },
     ];
     normalized.confidence = "low";
+  }
+
+  return normalized;
+}
+
+function applyTypeHeuristics(userMessage, normalized) {
+  const text = userMessage.toLowerCase();
+
+  const hasSale = /(sold|sale|nimeuza|niuza|uza|umeduza|niliuza)/i.test(text);
+  const hasPurchase =
+    /(bought|buy|purchase|nilinunua|nunua|nimenunua|stoki)/i.test(text);
+  const hasExpense =
+    /(expense|spent|paid|matumizi|gharama|rent|salary|umeme|maji|transport)/i.test(
+      text,
+    );
+  const hasDebt = /(debt|deni|owe|anadai|nadai|wadeni)/i.test(text);
+  const hasLoan = /(loan|mkopo|nahitaji mkopo)/i.test(text);
+
+  if (hasLoan) {
+    normalized.transactionType = "loan";
+  } else if (hasDebt) {
+    normalized.transactionType = "debt";
+  } else if (hasSale) {
+    normalized.transactionType = "sale";
+  } else if (hasPurchase) {
+    normalized.transactionType = "purchase";
+  } else if (hasExpense) {
+    normalized.transactionType = "expense";
   }
 
   return normalized;
