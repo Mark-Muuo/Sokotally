@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import app from "./app.js";
+import { startHealthMonitoring } from "./services/healthMonitor.js";
 
 const mongoUri =
   process.env.MONGODB_URI || "mongodb://localhost:27017/sokotally";
@@ -33,6 +34,9 @@ async function bootstrap() {
     httpServer.listen(port, () => {
       console.log(`Server running on port: ${port}`);
       console.log("Connected to MongoDB");
+
+      // Start health monitoring (check every 5 minutes)
+      startHealthMonitoring(5 * 60 * 1000);
     });
   } catch (e) {
     console.error("Failed to start server:", e.message);

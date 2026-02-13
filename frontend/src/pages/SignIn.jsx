@@ -32,8 +32,20 @@ const SignIn = () => {
     }
 
     try {
-      await signIn({ phone: form.phone.trim(), password: form.password });
-      navigate("/dashboard");
+      const userData = await signIn({
+        phone: form.phone.trim(),
+        password: form.password,
+      });
+      console.log("Login userData:", userData);
+      console.log("User role:", userData?.role);
+      // Redirect admin users to admin panel, regular users to dashboard
+      if (userData?.role === "admin") {
+        console.log("Redirecting to /admin");
+        navigate("/admin");
+      } else {
+        console.log("Redirecting to /dashboard");
+        navigate("/dashboard");
+      }
     } catch (err) {
       console.error("Sign in error:", err);
     }
@@ -67,11 +79,20 @@ const SignIn = () => {
       return;
     }
     try {
-      await signInWithOTP({
+      const userData = await signInWithOTP({
         phone: form.phone.trim(),
         otp: otpCode.trim(),
       });
-      navigate("/dashboard");
+      console.log("OTP login userData:", userData);
+      console.log("User role:", userData?.role);
+      // Redirect admin users to admin panel, regular users to dashboard
+      if (userData?.role === "admin") {
+        console.log("Redirecting to /admin");
+        navigate("/admin");
+      } else {
+        console.log("Redirecting to /dashboard");
+        navigate("/dashboard");
+      }
     } catch {
       console.error("Verify OTP error");
     }

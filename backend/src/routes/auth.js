@@ -59,6 +59,7 @@ authRouter.post("/register", async (req, res) => {
         gender: user.gender || "",
         ageRange: user.ageRange || "",
         avatar: user.avatar || "",
+        role: user.role || "user",
       },
     });
   } catch (e) {
@@ -95,6 +96,7 @@ authRouter.post("/login", async (req, res) => {
         gender: user.gender || "",
         ageRange: user.ageRange || "",
         avatar: user.avatar || "",
+        role: user.role || "user",
       },
     });
   } catch {
@@ -177,6 +179,7 @@ authRouter.post("/verify-otp", async (req, res) => {
         gender: user.gender || "",
         ageRange: user.ageRange || "",
         avatar: user.avatar || "",
+        role: user.role || "user",
       },
     });
   } catch {
@@ -227,6 +230,7 @@ authRouter.get("/me", authMiddleware, async (req, res) => {
         gender: user.gender || "",
         ageRange: user.ageRange || "",
         avatar: user.avatar || "",
+        role: user.role || "user",
       },
     });
   } catch {
@@ -279,6 +283,7 @@ authRouter.put("/profile", authMiddleware, async (req, res) => {
         gender: user.gender || "",
         ageRange: user.ageRange || "",
         avatar: user.avatar || "",
+        role: user.role || "user",
       },
     });
   } catch {
@@ -336,7 +341,7 @@ authRouter.post(
         details: error.message,
       });
     }
-  }
+  },
 );
 
 // Delete account and ALL user data (GDPR compliance)

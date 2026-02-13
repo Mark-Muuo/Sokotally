@@ -4,8 +4,11 @@ import { voiceUpload } from "../middleware/upload.js";
 import ChatMessage from "../models/ChatMessage.js";
 import Transaction from "../models/Transaction.js";
 import Item from "../models/Item.js";
+import Inventory from "../models/Inventory.js";
+import StockMovement from "../models/StockMovement.js";
 import Debt from "../models/Debt.js";
 import Customer from "../models/Customer.js";
+import { AIUsage } from "../models/AIUsage.js";
 import { extractKeywords } from "../services/keywordExtractor.js";
 import {
   getLLMResponse,
@@ -13,6 +16,17 @@ import {
   synthesizeSpeech,
 } from "../services/llmService.js";
 import { extractTransactionData } from "../services/transactionExtractor.js";
+import {
+  extractStockData,
+  classifyMessage,
+} from "../services/stockExtractor.js";
+import { processFinancialQuery } from "../services/queryService.js";
+import { findInventoryByNormalizedName } from "../services/itemNormalizer.js";
+import {
+  generateReport,
+  parseTimePeriod,
+  formatReportAsCSV,
+} from "../services/reportService.js";
 import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
@@ -32,9 +46,129 @@ router.post("/message", authMiddleware, async (req, res, next) => {
     const convId = conversationId || uuidv4();
     const userId = req.userId;
 
+    // Check if user is requesting a report
+    const lowerMessage = userMessage.toLowerCase();
+    const isReportRequest =
+      lowerMessage.includes("report") ||
+      lowerMessage.includes("ripoti") ||
+      (lowerMessage.includes("generate") && lowerMessage.includes("report")) ||
+      (lowerMessage.includes("download") && lowerMessage.includes("report")) ||
+      lowerMessage.includes("tengeneza ripoti") ||
+      lowerMessage.includes("nataka ripoti");
+
+    if (isReportRequest) {
+      // Try to extract time period from message
+      let timePeriod = "last 30 days"; // default
+
+      if (lowerMessage.includes("today") || lowerMessage.includes("leo")) {
+        timePeriod = "today";
+      } else if (
+        lowerMessage.includes("yesterday") ||
+        lowerMessage.includes("jana")
+      ) {
+        timePeriod = "yesterday";
+      } else if (
+        lowerMessage.includes("this week") ||
+        lowerMessage.includes("wiki hii")
+      ) {
+        timePeriod = "this week";
+      } else if (
+        lowerMessage.includes("last week") ||
+        lowerMessage.includes("wiki iliyopita")
+      ) {
+        timePeriod = "last week";
+      } else if (
+        lowerMessage.includes("this month") ||
+        lowerMessage.includes("mwezi huu")
+      ) {
+        timePeriod = "this month";
+      } else if (
+        lowerMessage.includes("last month") ||
+        lowerMessage.includes("mwezi uliopita")
+      ) {
+        timePeriod = "last month";
+      } else if (
+        lowerMessage.includes("this year") ||
+        lowerMessage.includes("mwaka huu")
+      ) {
+        timePeriod = "this year";
+      } else if (
+        lowerMessage.match(/last (\\d+) days?/) ||
+        lowerMessage.match(/siku (\\d+) zilizopita/)
+      ) {
+        const match =
+          lowerMessage.match(/last (\\d+) days?/) ||
+          lowerMessage.match(/siku (\\d+) zilizopita/);
+        timePeriod = `last ${match[1]} days`;
+      }
+
+      try {
+        // Generate the report
+        const dateRange = parseTimePeriod(timePeriod);
+        const reportData = await generateReport(userId, dateRange);
+
+        // Create download URL
+        const downloadUrl = `${process.env.API_BASE_URL || "http://localhost:4000"}/chat/download-report?period=${encodeURIComponent(timePeriod)}`;
+
+        // Save user message
+        const userChatMessage = new ChatMessage({
+          userId,
+          conversationId: convId,
+          message: userMessage,
+          sender: "user",
+          messageType: "text",
+        });
+        await userChatMessage.save();
+
+        // Create AI response with report summary
+        const reportSummary = `I've generated your business report for **${dateRange.label}**!\n\n📊 **Summary:**\n• Total Income: KES ${reportData.summary.totalIncome.toLocaleString()}\n• Total Expenses: KES ${reportData.summary.totalExpenses.toLocaleString()}\n• Net Profit: KES ${reportData.summary.netProfit.toLocaleString()} (${reportData.summary.profitMargin}% margin)\n• Transactions: ${reportData.summary.transactionCount}\n\n🏆 **Top Selling Items:**\n${reportData.sales.topSellingItems
+          .slice(0, 3)
+          .map(
+            (item, i) =>
+              `${i + 1}. ${item.name} - ${item.quantity} units, KES ${item.revenue.toLocaleString()}`,
+          )
+          .join(
+            "\n",
+          )}\n\n👥 **Top Customers:**\n${reportData.customers.topCustomers
+          .slice(0, 3)
+          .map(
+            (c, i) =>
+              `${i + 1}. ${c.name} - KES ${c.totalSpent.toLocaleString()}`,
+          )
+          .join(
+            "\n",
+          )}\n\n📦 **Inventory:**\n• Stock Value: KES ${reportData.inventory.totalStockValue.toLocaleString()}\n• Low Stock Items: ${reportData.inventory.lowStockCount}\n\nClick here to download the full CSV report: ${downloadUrl}`;
+
+        const aiChatMessage = new ChatMessage({
+          userId,
+          conversationId: convId,
+          message: reportSummary,
+          sender: "ai",
+          messageType: "text",
+          metadata: {
+            reportGenerated: true,
+            timePeriod,
+            downloadUrl,
+          },
+        });
+        await aiChatMessage.save();
+
+        return res.json({
+          reply: reportSummary,
+          conversationId: convId,
+          reportData,
+          downloadUrl,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (reportError) {
+        console.error("Report generation error:", reportError);
+        // Continue with normal chat flow if report generation fails
+      }
+    }
+
     // Fetch business analytics if user is asking about sales/business data
     let businessContext = "";
-    const lowerMessage = userMessage.toLowerCase();
+    // lowerMessage already declared above for report detection
     const isBusinessQuery =
       lowerMessage.includes("top") ||
       lowerMessage.includes("selling") ||
@@ -142,7 +276,7 @@ ${topItemsData
   .slice(0, 5)
   .map(
     (item, i) =>
-      `${i + 1}. ${item.originalName} - ${item.totalQuantity} units sold, KSh ${item.totalRevenue?.toLocaleString() || 0} revenue, avg price KSh ${item.avgPrice?.toFixed(2) || 0}`
+      `${i + 1}. ${item.originalName} - ${item.totalQuantity} units sold, KSh ${item.totalRevenue?.toLocaleString() || 0} revenue, avg price KSh ${item.avgPrice?.toFixed(2) || 0}`,
   )
   .join("\n")}
 
@@ -151,7 +285,7 @@ ${leastItemsData
   .slice(0, 5)
   .map(
     (item, i) =>
-      `${i + 1}. ${item.originalName} - ${item.totalQuantity} units sold, KSh ${item.totalRevenue?.toLocaleString() || 0} revenue, avg price KSh ${item.avgPrice?.toFixed(2) || 0}`
+      `${i + 1}. ${item.originalName} - ${item.totalQuantity} units sold, KSh ${item.totalRevenue?.toLocaleString() || 0} revenue, avg price KSh ${item.avgPrice?.toFixed(2) || 0}`,
   )
   .join("\n")}
 
@@ -181,6 +315,7 @@ You are a normal conversational AI that can:
 - Be friendly, helpful, and understanding
 - Help record sales, expenses, loans when users want to
 - Provide detailed business analytics and insights
+- **Generate downloadable business reports for any time period** (just ask "generate a report for this week" or "nataka ripoti ya mwezi huu")
 - Give advice on business, customer service, inventory management
 - Tell jokes, share stories, or just have casual conversation
 
@@ -192,6 +327,7 @@ You can answer questions like:
 - "How much profit did I make?" / "Nimefanya faida kiasi gani?"
 - "What are my total sales?" / "Mauzo yangu ni kiasi gani?"
 - "Which items need more attention?" / "Bidhaa zipi zinahitaji umakini zaidi?"
+- **"Generate a report for this week/month/year"** / **"Tengeneza ripoti ya wiki hii/mwezi huu"**
 - Provide specific numbers, item names, quantities, and prices from the data provided below
 
 Your personality:
@@ -226,16 +362,56 @@ REMEMBER:
 - Only mention transaction recording when they talk about business/sales
 - Be their friendly AI companion for business and life${businessContext}`;
 
+    const llmStartTime = Date.now();
     const llmResult = await getLLMResponse(
       userMessage,
       conversationalPrompt,
-      recentMessages.reverse()
+      recentMessages.reverse(),
     );
     const aiReply = llmResult.reply;
+    const llmResponseTime = Date.now() - llmStartTime;
+
+    // Track AI usage for monitoring
+    try {
+      await AIUsage.create({
+        userId,
+        messageType: "text",
+        tokensUsed: llmResult.tokensUsed || 0,
+        model: llmResult.model || process.env.LLM_PROVIDER || "groq",
+        responseTime: llmResponseTime,
+        success: true,
+        timestamp: new Date(),
+      });
+    } catch (trackingError) {
+      console.error("AI usage tracking error:", trackingError);
+      // Don't fail the request if tracking fails
+    }
 
     // Extract keywords and try transaction extraction - no language needed for extraction
     const keywords = extractKeywords(userMessage);
     const extractedData = await extractTransactionData(userMessage);
+
+    // Handle stock commands (add/remove/update) from chat input
+    let pendingStock = null;
+    try {
+      const stockIntent = await classifyMessage(userMessage);
+      if (stockIntent === "stock") {
+        const stockData = await extractStockData(userMessage);
+        if (stockData?.actionType && stockData?.itemName) {
+          pendingStock = {
+            actionType: stockData.actionType,
+            itemName: stockData.itemName,
+            quantity: stockData.quantity,
+            unit: stockData.unit || "pieces",
+            buyingPricePerUnit: stockData.buyingPricePerUnit || 0,
+            sellingPrice: stockData.sellingPrice || 0,
+            supplierName: stockData.supplierName || null,
+          };
+        }
+      }
+    } catch (stockError) {
+      console.error("Stock processing error:", stockError);
+    }
 
     // Check if transaction was detected - but DON'T save yet, wait for user confirmation
     let pendingTransaction = null;
@@ -309,6 +485,7 @@ REMEMBER:
       reply: aiReply,
       conversationId: convId,
       pendingTransaction,
+      pendingStock,
       extractedData,
       timestamp: new Date().toISOString(),
     });
@@ -380,7 +557,7 @@ router.post("/confirm-transaction", authMiddleware, async (req, res, next) => {
 
       // Link item to transaction
       const itemIndex = fullTransactionData.items.findIndex(
-        (i) => i.name === item.name
+        (i) => i.name === item.name,
       );
       if (itemIndex >= 0) {
         fullTransactionData.items[itemIndex].itemId = inventoryItem._id;
@@ -389,6 +566,45 @@ router.post("/confirm-transaction", authMiddleware, async (req, res, next) => {
 
     // Save transaction
     const transaction = await Transaction.create(fullTransactionData);
+
+    // If this is a sale (income), reduce inventory for sold items
+    if (
+      transactionData.type === "income" &&
+      transactionData.items &&
+      transactionData.items.length > 0
+    ) {
+      for (const item of transactionData.items) {
+        const quantitySold = item.quantity || 0;
+        if (quantitySold <= 0) continue;
+
+        // Find matching inventory item using normalized name
+        const inventoryItem = await findInventoryByNormalizedName(
+          item.name,
+          Inventory,
+          userId,
+        );
+
+        if (inventoryItem && inventoryItem.currentQuantity >= quantitySold) {
+          // Reduce stock
+          const previousQuantity = inventoryItem.currentQuantity;
+          inventoryItem.currentQuantity -= quantitySold;
+          await inventoryItem.save();
+
+          // Create stock movement record
+          await StockMovement.create({
+            inventoryId: inventoryItem._id,
+            userId,
+            type: "sale",
+            quantity: -quantitySold,
+            previousQuantity,
+            newQuantity: inventoryItem.currentQuantity,
+            unitPrice: item.unitPrice || 0,
+            reason: `Sold via transaction ${transaction._id}`,
+            rawInput: "transaction",
+          });
+        }
+      }
+    }
 
     const createdRecord = {
       type: "transaction",
@@ -410,6 +626,124 @@ router.post("/confirm-transaction", authMiddleware, async (req, res, next) => {
       success: true,
       transaction,
       createdRecord,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// NEW: Confirm and save stock update endpoint
+router.post("/confirm-stock", authMiddleware, async (req, res, next) => {
+  try {
+    const { stockData, conversationId } = req.body;
+    const userId = req.userId;
+
+    if (!stockData) {
+      return res.status(400).json({ error: "Stock data is required" });
+    }
+
+    // Use normalized name for matching
+    const inputName = stockData.itemName.trim();
+    const unit = stockData.unit || "pieces";
+    const quantity = Number(stockData.quantity) || 0;
+    const buyingPricePerUnit = Number(stockData.buyingPricePerUnit) || 0;
+    const sellingPrice = Number(stockData.sellingPrice) || 0;
+
+    if (quantity <= 0) {
+      return res.status(400).json({ error: "Quantity must be greater than 0" });
+    }
+
+    // Find existing inventory item using normalized name matching
+    let inventoryItem = await findInventoryByNormalizedName(
+      inputName,
+      Inventory,
+      userId,
+    );
+
+    if (!inventoryItem) {
+      // Create new item with normalized name
+      const { normalizeItemName } =
+        await import("../services/itemNormalizer.js");
+      const normalizedName = normalizeItemName(inputName);
+
+      inventoryItem = await Inventory.create({
+        userId,
+        itemName: normalizedName,
+        currentQuantity: 0,
+        unit,
+        buyingPrice: buyingPricePerUnit,
+        sellingPrice,
+        supplierName: stockData.supplierName || null,
+        rawInput: "assistant",
+      });
+    }
+
+    const previousQuantity = inventoryItem.currentQuantity;
+
+    if (stockData.actionType === "add_stock") {
+      inventoryItem.currentQuantity += quantity;
+      inventoryItem.unit = unit;
+      if (buyingPricePerUnit >= 0)
+        inventoryItem.buyingPrice = buyingPricePerUnit;
+      if (sellingPrice >= 0) inventoryItem.sellingPrice = sellingPrice;
+      if (stockData.supplierName)
+        inventoryItem.supplierName = stockData.supplierName;
+      inventoryItem.lastRestockedDate = new Date();
+      await inventoryItem.save();
+
+      await StockMovement.create({
+        inventoryId: inventoryItem._id,
+        userId,
+        type: "restock",
+        quantity,
+        previousQuantity,
+        newQuantity: inventoryItem.currentQuantity,
+        unitPrice: buyingPricePerUnit,
+        reason: "Stock added via assistant",
+        rawInput: "assistant",
+        supplierName: stockData.supplierName || null,
+      });
+    } else if (stockData.actionType === "remove_stock") {
+      const newQuantity = Math.max(0, inventoryItem.currentQuantity - quantity);
+      inventoryItem.currentQuantity = newQuantity;
+      await inventoryItem.save();
+
+      await StockMovement.create({
+        inventoryId: inventoryItem._id,
+        userId,
+        type: "spoilage",
+        quantity: -quantity,
+        previousQuantity,
+        newQuantity: inventoryItem.currentQuantity,
+        unitPrice: inventoryItem.buyingPrice || 0,
+        reason: "Stock removed via assistant",
+        rawInput: "assistant",
+      });
+    } else if (stockData.actionType === "update_stock") {
+      inventoryItem.currentQuantity = quantity;
+      inventoryItem.unit = unit;
+      if (buyingPricePerUnit >= 0)
+        inventoryItem.buyingPrice = buyingPricePerUnit;
+      if (sellingPrice >= 0) inventoryItem.sellingPrice = sellingPrice;
+      await inventoryItem.save();
+
+      await StockMovement.create({
+        inventoryId: inventoryItem._id,
+        userId,
+        type: "adjustment",
+        quantity: quantity - previousQuantity,
+        previousQuantity,
+        newQuantity: inventoryItem.currentQuantity,
+        unitPrice: inventoryItem.buyingPrice || 0,
+        reason: "Stock updated via assistant",
+        rawInput: "assistant",
+      });
+    }
+
+    res.json({
+      success: true,
+      inventoryItem,
+      conversationId,
     });
   } catch (error) {
     next(error);
@@ -541,7 +875,7 @@ REMEMBER:
       const llmResult = await getLLMResponse(
         transcribedText,
         conversationalPrompt,
-        recentMessages.reverse()
+        recentMessages.reverse(),
       );
       aiReply = llmResult.reply;
 
@@ -589,7 +923,7 @@ REMEMBER:
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // Get chat history
@@ -681,7 +1015,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // Delete a conversation
@@ -702,7 +1036,7 @@ router.delete(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // TTS endpoint - Convert text to speech
@@ -719,7 +1053,7 @@ router.post("/tts", authMiddleware, async (req, res, next) => {
 
     const { audio, contentType } = await synthesizeSpeech(
       textToSpeak,
-      voice || "alloy"
+      voice || "alloy",
     );
 
     res.setHeader("Content-Type", contentType);
@@ -739,6 +1073,110 @@ router.post("/tts", authMiddleware, async (req, res, next) => {
     } else {
       next(error);
     }
+  }
+});
+
+// Financial query endpoint using AI
+router.post("/query", authMiddleware, async (req, res) => {
+  try {
+    const { query } = req.body;
+    const userId = req.userId;
+
+    if (!query || !query.trim()) {
+      return res.status(400).json({ error: "Query is required" });
+    }
+
+    // Process the query using the query service
+    const result = await processFinancialQuery(query, userId);
+
+    // Save the query and response to chat history
+    const userMsg = new ChatMessage({
+      userId,
+      conversationId: uuidv4(),
+      sender: "user",
+      text: query,
+    });
+    await userMsg.save();
+
+    const botMsg = new ChatMessage({
+      userId,
+      conversationId: userMsg.conversationId,
+      sender: "assistant",
+      text: result.answer,
+    });
+    await botMsg.save();
+
+    res.status(200).json({
+      success: result.success,
+      answer: result.answer,
+      data: result.data,
+      intent: result.intent,
+      conversationId: userMsg.conversationId,
+    });
+  } catch (error) {
+    console.error("Error processing query:", error);
+    res.status(500).json({
+      error: "Failed to process query",
+      message: error.message,
+    });
+  }
+});
+
+// Generate business report endpoint
+router.post("/generate-report", authMiddleware, async (req, res, next) => {
+  try {
+    const { timePeriod } = req.body;
+    const userId = req.userId;
+
+    if (!timePeriod || !timePeriod.trim()) {
+      return res.status(400).json({ error: "Time period is required" });
+    }
+
+    // Parse time period
+    const dateRange = parseTimePeriod(timePeriod);
+
+    // Generate report
+    const reportData = await generateReport(userId, dateRange);
+
+    res.json({
+      success: true,
+      report: reportData,
+      downloadUrl: `/api/chat/download-report?period=${encodeURIComponent(timePeriod)}`,
+    });
+  } catch (error) {
+    console.error("Report generation error:", error);
+    next(error);
+  }
+});
+
+// Download report as CSV
+router.get("/download-report", authMiddleware, async (req, res, next) => {
+  try {
+    const { period } = req.query;
+    const userId = req.userId;
+
+    if (!period) {
+      return res.status(400).json({ error: "Time period is required" });
+    }
+
+    // Parse time period
+    const dateRange = parseTimePeriod(period);
+
+    // Generate report
+    const reportData = await generateReport(userId, dateRange);
+
+    // Format as CSV
+    const csvContent = formatReportAsCSV(reportData);
+
+    // Set headers for download
+    const filename = `business-report-${dateRange.label.replace(/\\s+/g, "-").toLowerCase()}-${new Date().toISOString().split("T")[0]}.csv`;
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csvContent);
+  } catch (error) {
+    console.error("Report download error:", error);
+    next(error);
   }
 });
 

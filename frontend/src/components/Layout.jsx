@@ -15,9 +15,16 @@ const Layout = ({ children }) => {
   const navItems = [
     { path: "/dashboard", label: "Dashboard" },
     { path: "/record", label: "Transactions" },
+    { path: "/stock", label: "Stock" },
+    { path: "/debts", label: "Debts" },
     { path: "/report", label: "Reports" },
     { path: "/assistant", label: "Assistant" },
   ];
+
+  // Add admin link for admin users
+  if (user?.role === "admin") {
+    navItems.push({ path: "/admin", label: "Admin Panel" });
+  }
 
   const handleSignOut = () => {
     signOut();
@@ -163,7 +170,34 @@ const Layout = ({ children }) => {
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                           {user.email}
                         </p>
+                        {user.role === "admin" && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-1">
+                            Administrator
+                          </p>
+                        )}
                       </div>
+                      {user.role === "admin" && (
+                        <Link
+                          to="/admin"
+                          onClick={() => setShowProfileMenu(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-blue-700 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                            />
+                          </svg>
+                          <span>Admin Panel</span>
+                        </Link>
+                      )}
                       <Link
                         to="/profile"
                         onClick={() => setShowProfileMenu(false)}

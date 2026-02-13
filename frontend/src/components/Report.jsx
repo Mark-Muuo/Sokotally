@@ -9,13 +9,28 @@ const Report = () => {
   const [period, setPeriod] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
-      2,
-      "0"
-    )}`;
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [topItems, setTopItems] = useState([]);
+  const [topItemsDisplayCount, setTopItemsDisplayCount] = useState(5);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  // Pagination states
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [transactions, setTransactions] = useState([]);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+
+  const [customersPage, setCustomersPage] = useState(1);
+  const [customers, setCustomers] = useState([]);
+  const [hasMoreCustomers, setHasMoreCustomers] = useState(false);
+  const [customersLoading, setCustomersLoading] = useState(false);
+
+  const [inventory, setInventory] = useState([]);
+  const [inventoryStats, setInventoryStats] = useState(null);
+
+  const [debts, setDebts] = useState({ given: [], owed: [] });
+  const ITEMS_PER_PAGE = 10;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -39,9 +54,6 @@ const Report = () => {
         const reportData = await res.json();
         setData(reportData);
       }
-
-      // Fetch analytics separately
-      fetchAnalytics();
     } catch (err) {
       console.error("Failed to fetch report:", err);
     } finally {
@@ -50,44 +62,170 @@ const Report = () => {
   }, [period, selectedMonth]);
 
   const fetchAnalytics = useCallback(async () => {
+    console.log("[fetchAnalytics] Starting...");
     setAnalyticsLoading(true);
     const token = getToken();
     if (!token) {
+      console.log("[fetchAnalytics] No token found");
       setAnalyticsLoading(false);
       return;
     }
 
     try {
-      // Determine period in days for analytics
-      let periodDays = "all";
-      if (period === "month" && selectedMonth) {
-        const now = new Date();
-        const selected = new Date(selectedMonth);
-        periodDays = 30; // Default to 30 days for monthly view
-      }
-
       // Fetch top selling items
       const topRes = await fetch(
         `${API_BASE}/api/transactions/analytics/top-items?limit=10&period=${period}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (topRes.ok) {
         const topData = await topRes.json();
         setTopItems(topData.items || []);
       }
+
+      // Fetch inventory stats
+      const inventoryRes = await fetch(`${API_BASE}/api/inventory`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (inventoryRes.ok) {
+        const invData = await inventoryRes.json();
+        setInventory(invData.inventory || []);
+        setInventoryStats(invData.summary || null);
+      }
+
+      // Fetch outstanding debts
+      console.log(
+        "[fetchAnalytics] Fetching debts from:",
+        `${API_BASE}/api/transactions/debts?limit=20`,
+      );
+      const debtsRes = await fetch(
+        `${API_BASE}/api/transactions/debts?limit=20`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      console.log("[fetchAnalytics] Debts response status:", debtsRes.status);
+      if (debtsRes.ok) {
+        const debtsData = await debtsRes.json();
+        console.log("Fetched debts:", debtsData);
+        setDebts({
+          given: debtsData || [],
+          owed: [],
+        });
+      } else {
+        const errorText = await debtsRes.text();
+        console.log("[fetchAnalytics] Debts response not ok:", errorText);
+      }
     } catch (err) {
       console.error("Failed to fetch analytics:", err);
     } finally {
       setAnalyticsLoading(false);
     }
-  }, [period, selectedMonth]);
+  }, [period]);
+
+  const fetchTransactions = useCallback(
+    async (page = 1, append = false) => {
+      setTransactionsLoading(true);
+      const token = getToken();
+      if (!token) {
+        setTransactionsLoading(false);
+        return;
+      }
+
+      try {
+        let url = `${API_BASE}/api/transactions?limit=${ITEMS_PER_PAGE}&page=${page}`;
+        if (period === "month" && selectedMonth) {
+          url += `&startDate=${selectedMonth}-01`;
+        }
+
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (res.ok) {
+          const txData = await res.json();
+
+          if (append) {
+            setTransactions((prev) => [...prev, ...txData]);
+          } else {
+            setTransactions(txData);
+          }
+
+          setHasMoreTransactions(txData.length === ITEMS_PER_PAGE);
+        }
+      } catch (err) {
+        console.error("Failed to fetch transactions:", err);
+      } finally {
+        setTransactionsLoading(false);
+      }
+    },
+    [period, selectedMonth],
+  );
+
+  const fetchCustomers = useCallback(async (page = 1, append = false) => {
+    setCustomersLoading(true);
+    const token = getToken();
+    if (!token) {
+      setCustomersLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/transactions/customers/top?limit=${ITEMS_PER_PAGE}&page=${page}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (res.ok) {
+        const newCustomers = await res.json();
+
+        if (append) {
+          setCustomers((prev) => [...prev, ...newCustomers]);
+        } else {
+          setCustomers(newCustomers);
+        }
+
+        setHasMoreCustomers(newCustomers.length === ITEMS_PER_PAGE);
+      }
+    } catch (err) {
+      console.error("Failed to fetch customers:", err);
+    } finally {
+      setCustomersLoading(false);
+    }
+  }, []);
+
+  const loadMoreTransactions = () => {
+    const nextPage = transactionsPage + 1;
+    setTransactionsPage(nextPage);
+    fetchTransactions(nextPage, true);
+  };
+
+  const loadMoreCustomers = () => {
+    const nextPage = customersPage + 1;
+    setCustomersPage(nextPage);
+    fetchCustomers(nextPage, true);
+  };
 
   useEffect(() => {
+    setTopItemsDisplayCount(5); // Reset to show 5 items when period changes
     fetchData();
-  }, [period, selectedMonth, fetchData]);
+    fetchAnalytics();
+    fetchTransactions(1, false);
+    fetchCustomers(1, false);
+  }, [
+    period,
+    selectedMonth,
+    fetchData,
+    fetchAnalytics,
+    fetchTransactions,
+    fetchCustomers,
+  ]);
 
   const stats = useMemo(() => {
     if (!data) return { sales: 0, expenses: 0, profit: 0, debt: 0 };
@@ -385,33 +523,45 @@ const Report = () => {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {topItems.map((item, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                      {topItems
+                        .slice(0, topItemsDisplayCount)
+                        .map((item, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                          >
+                            <div className="flex-shrink-0 w-8 h-8 bg-blue-600 dark:bg-blue-500 rounded-lg flex items-center justify-center text-white font-semibold text-sm shadow-sm">
+                              {i + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900 dark:text-white truncate">
+                                {item.itemName}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {item.totalQuantity} units @{" "}
+                                {formatCurrency(item.avgPrice || 0)}/unit
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold text-green-600 dark:text-green-400">
+                                {formatCurrency(item.totalRevenue || 0)}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Total
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      {topItems.length > topItemsDisplayCount && (
+                        <button
+                          onClick={() =>
+                            setTopItemsDisplayCount((prev) => prev + 5)
+                          }
+                          className="w-full mt-4 px-4 py-3 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-900 dark:text-white font-medium rounded-lg transition"
                         >
-                          <div className="flex-shrink-0 w-8 h-8 bg-blue-600 dark:bg-blue-500 rounded-lg flex items-center justify-center text-white font-semibold text-sm shadow-sm">
-                            {i + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 dark:text-white truncate">
-                              {item.itemName}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {item.totalQuantity} units @{" "}
-                              {formatCurrency(item.avgPrice || 0)}/unit
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-green-600 dark:text-green-400">
-                              {formatCurrency(item.totalRevenue || 0)}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Total
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                          Load More
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -477,6 +627,371 @@ const Report = () => {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Recent Transactions */}
+            <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Recent Transactions
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Latest business activity
+                </p>
+              </div>
+              <div className="p-6">
+                {transactionsLoading && transactions.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-gray-900 dark:border-white border-t-transparent"></div>
+                  </div>
+                ) : transactions.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg
+                        className="w-8 h-8 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      No transactions available
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {transactions.map((txn) => (
+                      <div
+                        key={txn._id}
+                        className="flex items-center gap-4 p-4 rounded-lg border border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                      >
+                        <div
+                          className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${
+                            txn.type === "sale"
+                              ? "bg-green-50 dark:bg-green-900/20"
+                              : txn.type === "expense"
+                                ? "bg-red-50 dark:bg-red-900/20"
+                                : "bg-blue-50 dark:bg-blue-900/20"
+                          }`}
+                        >
+                          <span
+                            className={`text-2xl ${
+                              txn.type === "sale"
+                                ? "text-green-600 dark:text-green-400"
+                                : txn.type === "expense"
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-blue-600 dark:text-blue-400"
+                            }`}
+                          >
+                            {txn.type === "sale"
+                              ? "↑"
+                              : txn.type === "expense"
+                                ? "↓"
+                                : "■"}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white capitalize">
+                            {txn.type}
+                            {txn.customer && (
+                              <span className="text-gray-500 dark:text-gray-400 font-normal ml-2">
+                                - {txn.customer}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                            {txn.notes || txn.category || "No description"}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            {new Date(txn.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p
+                            className={`font-semibold text-lg ${
+                              txn.type === "sale"
+                                ? "text-green-600 dark:text-green-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {txn.type === "sale" ? "+" : "-"}
+                            {formatCurrency(txn.amount)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {hasMoreTransactions && (
+                      <button
+                        onClick={loadMoreTransactions}
+                        disabled={transactionsLoading}
+                        className="w-full mt-4 px-4 py-3 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-900 dark:text-white font-medium rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {transactionsLoading ? "Loading..." : "Load More"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Top Customers */}
+            <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Top Customers
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Highest spending customers
+                </p>
+              </div>
+              <div className="p-6">
+                {customersLoading && customers.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-gray-900 dark:border-white border-t-transparent"></div>
+                  </div>
+                ) : customers.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg
+                        className="w-8 h-8 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      No customer data available
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {customers.map((customer, i) => (
+                      <div
+                        key={customer._id}
+                        className="flex items-center gap-4 p-4 rounded-lg border border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                      >
+                        <div className="flex-shrink-0 w-10 h-10 bg-blue-600 dark:bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold shadow-sm">
+                          {(customersPage - 1) * ITEMS_PER_PAGE + i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {customer._id || "Anonymous"}
+                          </p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {customer.transactionCount} transaction
+                            {customer.transactionCount !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-green-600 dark:text-green-400 text-lg">
+                            {formatCurrency(customer.totalSpent)}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500">
+                            Total spent
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {hasMoreCustomers && (
+                      <button
+                        onClick={loadMoreCustomers}
+                        disabled={customersLoading}
+                        className="w-full mt-4 px-4 py-3 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-900 dark:text-white font-medium rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {customersLoading ? "Loading..." : "Load More"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Current Inventory */}
+            <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Current Inventory
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Stock levels and low stock alerts
+                </p>
+              </div>
+              <div className="p-6">
+                {inventory.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg
+                        className="w-8 h-8 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      No inventory items available
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {inventory.map((item) => {
+                      const isLowStock =
+                        item.currentQuantity <= item.reorderLevel;
+                      return (
+                        <div
+                          key={item._id}
+                          className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
+                            isLowStock
+                              ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10"
+                              : "border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50"
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {item.itemName}
+                              </p>
+                              {isLowStock && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300">
+                                  Low Stock
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              Unit Price: {formatCurrency(item.sellingPrice)} •
+                              Value:{" "}
+                              {formatCurrency(
+                                item.currentQuantity * item.buyingPrice,
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p
+                              className={`text-2xl font-bold ${
+                                isLowStock
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-gray-900 dark:text-white"
+                              }`}
+                            >
+                              {item.currentQuantity}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-500">
+                              {item.unit ||
+                                (item.currentQuantity === 1 ? "unit" : "units")}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Outstanding Debts */}
+            <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Outstanding Debts
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Money owed to you by customers
+                </p>
+              </div>
+              <div className="p-6">
+                {debts.given.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg
+                        className="w-8 h-8 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      No outstanding debts
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {debts.given.map((debt) => (
+                      <div
+                        key={debt._id}
+                        className="flex items-center justify-between p-4 rounded-lg bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {debt.customerName ||
+                              debt.customer ||
+                              "Unknown Customer"}
+                          </p>
+                          {debt.occurredAt && (
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              Date:{" "}
+                              {new Date(debt.occurredAt).toLocaleDateString()}
+                            </p>
+                          )}
+                          {debt.notes && (
+                            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                              {debt.notes}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-orange-600 dark:text-orange-400 text-lg">
+                            +{formatCurrency(debt.amount)}
+                          </p>
+                          {debt.status && (
+                            <span
+                              className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                                debt.status === "paid"
+                                  ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300"
+                                  : debt.status === "partial"
+                                    ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
+                                    : "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300"
+                              }`}
+                            >
+                              {debt.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </>

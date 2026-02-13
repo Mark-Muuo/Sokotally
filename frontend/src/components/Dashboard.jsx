@@ -7,6 +7,7 @@ import { API_BASE } from "../config/api";
 const Dashboard = () => {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [stockStats, setStockStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,25 +19,44 @@ const Dashboard = () => {
       }
 
       try {
-        const res = await fetch(
-          `${API_BASE}/api/transactions/stats/dashboard`,
-          {
+        const [dashboardRes, stockRes] = await Promise.all([
+          fetch(`${API_BASE}/api/transactions/stats/dashboard`, {
             headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+          }),
+          fetch(`${API_BASE}/api/inventory/stats`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
 
-        if (res.ok) {
-          const dashboardData = await res.json();
+        if (dashboardRes.ok) {
+          const dashboardData = await dashboardRes.json();
           setData(dashboardData);
+        } else {
+          console.error("Dashboard fetch failed:", await dashboardRes.text());
+        }
+
+        if (stockRes.ok) {
+          const stockData = await stockRes.json();
+          setStockStats(stockData);
+        } else {
+          console.error("Stock stats fetch failed:", await stockRes.text());
+          // Set default empty stats if fetch fails
+          setStockStats({ totalValue: 0, lowStockCount: 0 });
         }
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
+        setStockStats({ totalValue: 0, lowStockCount: 0 });
       } finally {
         setLoading(false);
       }
     };
 
     fetchDashboardData();
+
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchDashboardData, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const stats = {
@@ -79,7 +99,7 @@ const Dashboard = () => {
         ) : (
           <>
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
               {[
                 {
                   label: "Total Sales",
@@ -109,28 +129,67 @@ const Dashboard = () => {
                   color: "text-orange-600 dark:text-orange-400",
                   bg: "bg-orange-50 dark:bg-orange-900/20",
                 },
-              ].map((stat, index) => (
-                <div
-                  key={index}
-                  className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <p className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide font-medium">
-                      {stat.label}
-                    </p>
-                    <div
-                      className={`w-10 h-10 ${stat.bg} rounded-lg flex items-center justify-center`}
-                    >
-                      <span className={`text-2xl ${stat.color}`}>
-                        {stat.symbol}
-                      </span>
+                {
+                  label: "Stock Value",
+                  value: stockStats?.totalValue || 0,
+                  symbol: "■",
+                  color: "text-purple-600 dark:text-purple-400",
+                  bg: "bg-purple-50 dark:bg-purple-900/20",
+                  link: "/stock",
+                },
+              ].map((stat, index) =>
+                stat.link ? (
+                  <Link
+                    key={index}
+                    to={stat.link}
+                    className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide font-medium">
+                        {stat.label}
+                      </p>
+                      <div
+                        className={`w-10 h-10 ${stat.bg} rounded-lg flex items-center justify-center`}
+                      >
+                        <span className={`text-2xl ${stat.color}`}>
+                          {stat.symbol}
+                        </span>
+                      </div>
                     </div>
+                    <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                      KSh {stat.value.toLocaleString()}
+                    </p>
+                    {stockStats &&
+                      stockStats.lowStockCount > 0 &&
+                      stat.label === "Stock Value" && (
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-2">
+                          {stockStats.lowStockCount} items low stock
+                        </p>
+                      )}
+                  </Link>
+                ) : (
+                  <div
+                    key={index}
+                    className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide font-medium">
+                        {stat.label}
+                      </p>
+                      <div
+                        className={`w-10 h-10 ${stat.bg} rounded-lg flex items-center justify-center`}
+                      >
+                        <span className={`text-2xl ${stat.color}`}>
+                          {stat.symbol}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                      KSh {stat.value.toLocaleString()}
+                    </p>
                   </div>
-                  <p className="text-3xl font-semibold text-gray-900 dark:text-white">
-                    KSh {stat.value.toLocaleString()}
-                  </p>
-                </div>
-              ))}
+                ),
+              )}
             </div>
 
             {/* Two Column Layout */}
@@ -337,6 +396,14 @@ const Dashboard = () => {
                   {
                     label: "Add Expense",
                     path: "/record",
+                  },
+                  {
+                    label: "Manage Stock",
+                    path: "/stock",
+                  },
+                  {
+                    label: "View Debts",
+                    path: "/debts",
                   },
                   {
                     label: "View Reports",
