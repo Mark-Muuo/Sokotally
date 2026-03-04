@@ -1,1 +1,1 @@
-
+SokoTally is a web-based AI-powered bookkeeping system that helps informal vegetable vendors record sales, expenses, debts, and loans using natural language in English or Kiswahili. It automatically extracts transaction data and generates financial summaries to support better business decision-making.
