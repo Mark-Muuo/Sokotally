@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { getValidToken } from "../storage/auth";
 import { API_BASE } from "../config/api";
 
@@ -8,21 +8,72 @@ const SokoAssistant = () => {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState(null);
+
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [pendingTransaction, setPendingTransaction] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [pendingStock, setPendingStock] = useState(null);
   const [showStockConfirmation, setShowStockConfirmation] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isEditingTransaction, setIsEditingTransaction] = useState(false);
+  const [editedTransaction, setEditedTransaction] = useState(null);
+  const [isEditingStock, setIsEditingStock] = useState(false);
+  const [editedStock, setEditedStock] = useState(null);
   const messagesEndRef = useRef(null);
   const prevMessagesCount = useRef(messages.length);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const recordingIntervalRef = useRef(null);
-  const activeAudioRef = useRef(null);
   const recognitionRef = useRef(null);
   const interimTranscriptRef = useRef("");
   const silenceTimerRef = useRef(null);
+
+  // --- TTS (Google Web Speech Synthesis) ---
+  const handleSpeak = useCallback(
+    (text, messageId) => {
+      if (!window.speechSynthesis) return;
+
+      // If already speaking this message, stop it
+      if (speakingMessageId === messageId) {
+        window.speechSynthesis.cancel();
+        setSpeakingMessageId(null);
+        return;
+      }
+
+      // Stop any ongoing speech
+      window.speechSynthesis.cancel();
+
+      // Detect language: if text has Swahili-common words, use sw-KE
+      const swahiliPattern =
+        /\b(habari|asante|karibu|ndio|hapana|sawa|duka|bidhaa|bei|shilingi|ksh|umeuz|umenunua|nimekuelewa|safi|poa|basi|kwa|na|ya|wa|ni|la|au)\b/i;
+      const lang = swahiliPattern.test(text) ? "sw-KE" : "en-US";
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = 0.95;
+      utterance.pitch = 1;
+
+      // Try to pick a good voice for the language
+      const voices = window.speechSynthesis.getVoices();
+      const match = voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
+      if (match) utterance.voice = match;
+
+      utterance.onend = () => setSpeakingMessageId(null);
+      utterance.onerror = () => setSpeakingMessageId(null);
+
+      setSpeakingMessageId(messageId);
+      window.speechSynthesis.speak(utterance);
+    },
+    [speakingMessageId],
+  );
+
+  // Cleanup TTS on unmount
+  useEffect(() => {
+    return () => {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    };
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,14 +94,6 @@ const SokoAssistant = () => {
 
   // Cleanup voice recording on unmount
   useEffect(() => {
-    // Load voices for TTS
-    if ("speechSynthesis" in window) {
-      // Chrome loads voices asynchronously
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-    }
-
     return () => {
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
@@ -73,13 +116,6 @@ const SokoAssistant = () => {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
-      }
-      if (activeAudioRef.current) {
-        activeAudioRef.current.pause();
-        activeAudioRef.current = null;
-      }
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -160,28 +196,31 @@ const SokoAssistant = () => {
 
       // Check if there's a pending transaction that needs confirmation
       if (data.pendingTransaction) {
-        console.log(
-          "[CONFIRMATION] Setting pending transaction:",
-          data.pendingTransaction,
-        );
         setPendingTransaction({
           ...data.pendingTransaction,
           conversationId: data.conversationId,
           userMessage: userMessage,
         });
         setShowConfirmation(true);
-        console.log("[CONFIRMATION] showConfirmation set to true");
+        // Return a brief acknowledgment — the confirmation card handles the details
+        const txType =
+          data.pendingTransaction.type === "income"
+            ? "sale"
+            : data.pendingTransaction.type === "expense"
+              ? "expense"
+              : "transaction";
+        return `I detected a ${txType} of KES ${data.pendingTransaction.amount?.toLocaleString()}. Please confirm below.`;
       }
 
       if (data.pendingStock) {
-        console.log("[CONFIRMATION] Setting pending stock:", data.pendingStock);
         setPendingStock({
           ...data.pendingStock,
           conversationId: data.conversationId,
           userMessage: userMessage,
         });
         setShowStockConfirmation(true);
-        console.log("[CONFIRMATION] showStockConfirmation set to true");
+        // Return a brief acknowledgment — the confirmation card handles the details
+        return `I detected a stock update for ${data.pendingStock.itemName}. Please confirm below.`;
       }
 
       return data.reply;
@@ -194,6 +233,9 @@ const SokoAssistant = () => {
   // Core send function that accepts text directly (used by auto-send)
   const sendMessage = async (messageText) => {
     if (!messageText.trim() || isLoading) return;
+
+    // Block new messages while a confirmation is pending
+    if (showConfirmation || showStockConfirmation) return;
 
     const userMessage = {
       id: Date.now(),
@@ -216,9 +258,6 @@ const SokoAssistant = () => {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiResponse]);
-
-      // Automatically speak the AI response
-      speakWithBrowserTTS(aiResponseText);
     } catch (error) {
       console.error("[SEND] Error:", error);
       const errorResponse = {
@@ -247,8 +286,50 @@ const SokoAssistant = () => {
     }
   };
 
+  // Enable edit mode
+  const handleEditTransaction = () => {
+    setEditedTransaction({ ...pendingTransaction });
+    setIsEditingTransaction(true);
+  };
+
+  // Update edited transaction field
+  const updateEditedField = (field, value) => {
+    setEditedTransaction((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Update edited item
+  const updateEditedItem = (index, field, value) => {
+    setEditedTransaction((prev) => {
+      const items = [...prev.items];
+      items[index] = { ...items[index], [field]: parseFloat(value) || 0 };
+      // Recalculate totalPrice if quantity or unitPrice changes
+      if (field === "quantity" || field === "unitPrice") {
+        items[index].totalPrice =
+          items[index].quantity * items[index].unitPrice;
+      }
+      // Recalculate total amount
+      const newAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
+      return { ...prev, items, amount: newAmount };
+    });
+  };
+
+  // Save edited changes
+  const handleSaveEdit = () => {
+    setPendingTransaction(editedTransaction);
+    setIsEditingTransaction(false);
+    setEditedTransaction(null);
+  };
+
+  // Cancel edit
+  const handleCancelEdit = () => {
+    setIsEditingTransaction(false);
+    setEditedTransaction(null);
+  };
+
   // Confirm transaction
   const handleConfirmTransaction = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
     try {
       const token = getValidToken();
 
@@ -296,10 +377,39 @@ const SokoAssistant = () => {
     } finally {
       setShowConfirmation(false);
       setPendingTransaction(null);
+      setIsConfirming(false);
+      setIsEditingTransaction(false);
+      setEditedTransaction(null);
     }
   };
 
+  // Enable stock edit mode
+  const handleEditStock = () => {
+    setEditedStock({ ...pendingStock });
+    setIsEditingStock(true);
+  };
+
+  // Update edited stock field
+  const updateEditedStockField = (field, value) => {
+    setEditedStock((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Save stock edit
+  const handleSaveStockEdit = () => {
+    setPendingStock(editedStock);
+    setIsEditingStock(false);
+    setEditedStock(null);
+  };
+
+  // Cancel stock edit
+  const handleCancelStockEdit = () => {
+    setIsEditingStock(false);
+    setEditedStock(null);
+  };
+
   const handleConfirmStock = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
     try {
       const token = getValidToken();
 
@@ -337,10 +447,15 @@ const SokoAssistant = () => {
     } finally {
       setShowStockConfirmation(false);
       setPendingStock(null);
+      setIsConfirming(false);
+      setIsEditingStock(false);
+      setEditedStock(null);
     }
   };
 
   const handleCancelStock = () => {
+    setIsEditingStock(false);
+    setEditedStock(null);
     const cancelMessage = {
       id: Date.now() + 3,
       type: "ai",
@@ -355,6 +470,8 @@ const SokoAssistant = () => {
 
   // Cancel transaction
   const handleCancelTransaction = () => {
+    setIsEditingTransaction(false);
+    setEditedTransaction(null);
     const cancelMessage = {
       id: Date.now() + 2,
       type: "ai",
@@ -374,201 +491,6 @@ const SokoAssistant = () => {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const stopAudioPlayback = () => {
-    if (activeAudioRef.current) {
-      activeAudioRef.current.pause();
-      activeAudioRef.current = null;
-    }
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-  };
-
-  const detectSpeechLanguage = (text) => {
-    // Enhanced Swahili detection with more common words
-    const swahiliPattern =
-      /\b(nimeuza|nilinunua|leo|shilingi|pesa|habari|asante|karibu|sawa|je|nipe|mimi|wewe|nataka|kuja|kwenda|chukua|lipa|deni|mkopo|bidhaa|soko|bei|ngapi|shamba|mazao|nyanya|vitunguu|sukari|unga|mahindi|nazi|mtama|kunde|maharage)\b/i;
-    return swahiliPattern.test(text) ? "sw-KE" : "en-US";
-  };
-
-  const speakWithBrowserTTS = (text) => {
-    if (!("speechSynthesis" in window)) {
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-
-    // Prioritize Kiswahili but detect language
-    const detectedLang = detectSpeechLanguage(text);
-    utterance.lang = detectedLang;
-
-    // Find an African male voice
-    const voices = window.speechSynthesis.getVoices();
-
-    // Log available voices for debugging
-    console.log(
-      "[TTS] Available voices:",
-      voices.map((v) => `${v.name} (${v.lang})`).join(", "),
-    );
-
-    // African locale codes to prioritize
-    const africanLocales = [
-      "sw",
-      "sw-KE",
-      "sw-TZ", // Swahili
-      "en-KE",
-      "en-NG",
-      "en-ZA", // African English variants
-      "en-GH",
-      "en-TZ",
-      "en-UG", // More African English
-      "zu",
-      "zu-ZA", // Zulu
-      "af",
-      "af-ZA", // Afrikaans
-      "yo", // Yoruba
-      "ha", // Hausa
-    ];
-
-    const femaleKeywords = [
-      "female",
-      "woman",
-      "girl",
-      "zira",
-      "hazel",
-      "susan",
-      "samantha",
-      "karen",
-      "fiona",
-      "moira",
-      "tessa",
-      "victoria",
-      "grandma",
-      "alice",
-      "catherine",
-      "ellen",
-      "jenny",
-      "sarah",
-      "emma",
-      "aria",
-      "nicky",
-      "emily",
-    ];
-
-    const isFemale = (voice) => {
-      const name = voice.name.toLowerCase();
-      return femaleKeywords.some((kw) => name.includes(kw));
-    };
-
-    const isAfricanLocale = (lang) => {
-      return africanLocales.some((loc) => lang.startsWith(loc) || lang === loc);
-    };
-
-    let selectedVoice = null;
-
-    // Priority 1: Swahili voice (non-female)
-    selectedVoice = voices.find((v) => v.lang.startsWith("sw") && !isFemale(v));
-    // Priority 2: Any Swahili voice
-    if (!selectedVoice)
-      selectedVoice = voices.find((v) => v.lang.startsWith("sw"));
-    // Priority 3: African English male voice (en-KE, en-NG, en-ZA, etc.)
-    if (!selectedVoice)
-      selectedVoice = voices.find(
-        (v) =>
-          isAfricanLocale(v.lang) && v.lang.startsWith("en") && !isFemale(v),
-      );
-    // Priority 4: Any African locale voice
-    if (!selectedVoice)
-      selectedVoice = voices.find(
-        (v) => isAfricanLocale(v.lang) && !isFemale(v),
-      );
-    // Priority 5: English (India/non-US/non-UK) male — closer accent
-    if (!selectedVoice)
-      selectedVoice = voices.find(
-        (v) =>
-          v.lang.startsWith("en") &&
-          !v.lang.includes("US") &&
-          !v.lang.includes("GB") &&
-          !isFemale(v),
-      );
-    // Priority 6: Any non-female English voice
-    if (!selectedVoice)
-      selectedVoice = voices.find(
-        (v) => v.lang.startsWith("en") && !isFemale(v),
-      );
-    // Priority 7: Any English voice at all
-    if (!selectedVoice)
-      selectedVoice = voices.find((v) => v.lang.startsWith("en"));
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-      console.log(
-        "[TTS] Selected voice:",
-        selectedVoice.name,
-        selectedVoice.lang,
-      );
-    }
-
-    utterance.rate = 0.88; // Slightly slower for natural African cadence
-    utterance.pitch = 0.75; // Lower pitch for deep male voice
-    utterance.volume = 1.0;
-
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
-  };
-
-  // TTS playback function - currently unused but available for future use
-  const _playAssistantResponse = async (text) => {
-    stopAudioPlayback();
-
-    try {
-      const token = getValidToken();
-      const ttsResponse = await fetch(`${API_BASE}/chat/tts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          text,
-          voice: "alloy",
-        }),
-      });
-
-      if (!ttsResponse.ok) {
-        speakWithBrowserTTS(text);
-        return;
-      }
-
-      const audioBlob = await ttsResponse.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      activeAudioRef.current = audio;
-
-      setIsSpeaking(true);
-      audio.onended = () => {
-        setIsSpeaking(false);
-        URL.revokeObjectURL(audioUrl);
-        activeAudioRef.current = null;
-      };
-      audio.onerror = () => {
-        setIsSpeaking(false);
-        URL.revokeObjectURL(audioUrl);
-        activeAudioRef.current = null;
-        speakWithBrowserTTS(text);
-      };
-
-      await audio.play();
-    } catch {
-      speakWithBrowserTTS(text);
-    }
-  };
-
   const startVoiceRecording = async () => {
     if (isRecording) return;
 
@@ -581,10 +503,6 @@ const SokoAssistant = () => {
         "Speech recognition is not supported in your browser. Please use Chrome, Brave, Edge, or Safari.",
       );
       return;
-    }
-
-    if (isSpeaking) {
-      stopAudioPlayback();
     }
 
     try {
@@ -729,9 +647,6 @@ const SokoAssistant = () => {
   };
 
   const handleVoiceButton = () => {
-    if (isSpeaking) {
-      stopAudioPlayback();
-    }
     if (isRecording) {
       stopVoiceRecording();
     } else {
@@ -791,10 +706,10 @@ const SokoAssistant = () => {
         <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-4 md:px-6 py-4 flex items-center justify-between shrink-0">
           <div>
             <h1 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white">
-              Assistant
+              SokoTally AI
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Your full chat history is saved here
+              Your AI assistant for business management
             </p>
           </div>
         </div>
@@ -830,9 +745,65 @@ const SokoAssistant = () => {
                             <div className="text-sm md:text-base text-gray-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
                               {formatMessageContent(message.content)}
                             </div>
-                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2">
-                              {formatTimestamp(message.timestamp)}
-                            </p>
+                            <div className="flex items-center justify-between mt-2">
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {formatTimestamp(message.timestamp)}
+                              </p>
+                              <button
+                                onClick={() =>
+                                  handleSpeak(message.content, message.id)
+                                }
+                                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                                title={
+                                  speakingMessageId === message.id
+                                    ? "Stop"
+                                    : "Listen"
+                                }
+                              >
+                                {speakingMessageId === message.id ? (
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    className="text-blue-500"
+                                  >
+                                    <rect
+                                      x="6"
+                                      y="5"
+                                      width="4"
+                                      height="14"
+                                      rx="1"
+                                    />
+                                    <rect
+                                      x="14"
+                                      y="5"
+                                      width="4"
+                                      height="14"
+                                      rx="1"
+                                    />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+                                  >
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -883,10 +854,10 @@ const SokoAssistant = () => {
                     </p>
                   </div>
                 )}
-                {!isRecording && (isLoading || isSpeaking) && (
+                {!isRecording && isLoading && (
                   <div className="text-center mb-3">
                     <p className="text-blue-400 text-sm font-medium">
-                      {isSpeaking ? "Speaking..." : "Thinking..."}
+                      Thinking...
                     </p>
                   </div>
                 )}
@@ -901,24 +872,6 @@ const SokoAssistant = () => {
                       className="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 hover:border-gray-400 dark:hover:border-slate-600 rounded-xl px-5 sm:px-6 py-3.5 sm:py-4 text-sm sm:text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 dark:focus:border-white transition"
                     />
                   </div>
-
-                  {/* Stop Speaking Button */}
-                  {isSpeaking && (
-                    <button
-                      onClick={stopAudioPlayback}
-                      className="p-3 sm:p-4 border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl text-red-600 dark:text-red-400 transition flex items-center justify-center shrink-0"
-                      title="Stop speaking"
-                    >
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                      >
-                        <path d="M6 6h12v12H6z" />
-                      </svg>
-                    </button>
-                  )}
 
                   {/* Voice Button */}
                   <button
@@ -1026,79 +979,204 @@ const SokoAssistant = () => {
 
             {/* Transaction Details */}
             <div className="p-6 space-y-4">
-              <div className="bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                    Type:
-                  </span>
-                  <span className="text-gray-900 dark:text-white font-bold capitalize">
-                    {pendingTransaction.type === "income"
-                      ? "Sale"
-                      : pendingTransaction.type === "expense"
-                        ? "Expense"
-                        : pendingTransaction.type}
-                  </span>
-                </div>
+              {isEditingTransaction && editedTransaction ? (
+                /* Edit Form */
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                      Amount (KES)
+                    </label>
+                    <input
+                      type="number"
+                      value={editedTransaction.amount}
+                      onChange={(e) =>
+                        updateEditedField(
+                          "amount",
+                          parseFloat(e.target.value) || 0,
+                        )
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                    Amount:
-                  </span>
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                    KES {pendingTransaction.amount.toLocaleString()}
-                  </span>
-                </div>
-
-                {pendingTransaction.items &&
-                  pendingTransaction.items.length > 0 && (
-                    <div className="border-t border-gray-200 dark:border-slate-700 pt-3 mt-3">
-                      <span className="text-gray-600 dark:text-slate-400 text-sm font-medium block mb-2">
-                        Items:
-                      </span>
-                      <div className="space-y-2">
-                        {pendingTransaction.items.map((item, index) => (
-                          <div
-                            key={index}
-                            className="flex justify-between text-sm"
-                          >
-                            <span className="text-gray-700 dark:text-slate-300">
-                              {item.quantity} {item.unit} {item.name}
-                            </span>
-                            <span className="text-gray-900 dark:text-white font-medium">
-                              @ {item.unitPrice.toLocaleString()}
-                            </span>
-                          </div>
-                        ))}
+                  {editedTransaction.items &&
+                    editedTransaction.items.length > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                          Items
+                        </label>
+                        <div className="space-y-3">
+                          {editedTransaction.items.map((item, index) => (
+                            <div
+                              key={index}
+                              className="bg-gray-50 dark:bg-slate-900/50 rounded-lg p-3 space-y-2"
+                            >
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-gray-600 dark:text-slate-400 mb-1">
+                                    Quantity
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={item.quantity}
+                                    onChange={(e) =>
+                                      updateEditedItem(
+                                        index,
+                                        "quantity",
+                                        e.target.value,
+                                      )
+                                    }
+                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 dark:text-slate-400 mb-1">
+                                    Unit Price
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={item.unitPrice}
+                                    onChange={(e) =>
+                                      updateEditedItem(
+                                        index,
+                                        "unitPrice",
+                                        e.target.value,
+                                      )
+                                    }
+                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-600 dark:text-slate-400">
+                                {item.name} • Total: KES{" "}
+                                {(
+                                  item.quantity * item.unitPrice
+                                ).toLocaleString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
+                    )}
+
+                  {editedTransaction.customerName !== undefined && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Customer Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editedTransaction.customerName || ""}
+                        onChange={(e) =>
+                          updateEditedField("customerName", e.target.value)
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
                   )}
-
-                {pendingTransaction.customerName && (
-                  <div className="flex justify-between items-center border-t border-gray-200 dark:border-slate-700 pt-3">
+                </div>
+              ) : (
+                /* Display Mode */
+                <div className="bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-3">
+                  <div className="flex justify-between items-center">
                     <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                      Customer:
+                      Type:
                     </span>
-                    <span className="text-gray-900 dark:text-white font-medium">
-                      {pendingTransaction.customerName}
+                    <span className="text-gray-900 dark:text-white font-bold capitalize">
+                      {pendingTransaction.type === "income"
+                        ? "Sale"
+                        : pendingTransaction.type === "expense"
+                          ? "Expense"
+                          : pendingTransaction.type}
                     </span>
                   </div>
-                )}
-              </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                      Amount:
+                    </span>
+                    <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                      KES {pendingTransaction.amount.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {pendingTransaction.items &&
+                    pendingTransaction.items.length > 0 && (
+                      <div className="border-t border-gray-200 dark:border-slate-700 pt-3 mt-3">
+                        <span className="text-gray-600 dark:text-slate-400 text-sm font-medium block mb-2">
+                          Items:
+                        </span>
+                        <div className="space-y-2">
+                          {pendingTransaction.items.map((item, index) => (
+                            <div
+                              key={index}
+                              className="flex justify-between text-sm"
+                            >
+                              <span className="text-gray-700 dark:text-slate-300">
+                                {item.quantity} {item.unit} {item.name}
+                              </span>
+                              <span className="text-gray-900 dark:text-white font-medium">
+                                @ {item.unitPrice.toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {pendingTransaction.customerName && (
+                    <div className="flex justify-between items-center border-t border-gray-200 dark:border-slate-700 pt-3">
+                      <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                        Customer:
+                      </span>
+                      <span className="text-gray-900 dark:text-white font-medium">
+                        {pendingTransaction.customerName}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
-                <button
-                  onClick={handleCancelTransaction}
-                  className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
-                >
-                  No, Cancel
-                </button>
-                <button
-                  onClick={handleConfirmTransaction}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
-                >
-                  Yes, Save It
-                </button>
+                {isEditingTransaction ? (
+                  <>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveEdit}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
+                    >
+                      Save Changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleCancelTransaction}
+                      className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleEditTransaction}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={handleConfirmTransaction}
+                      disabled={isConfirming}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isConfirming ? "Saving..." : "Confirm"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1119,56 +1197,205 @@ const SokoAssistant = () => {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                    Action:
-                  </span>
-                  <span className="text-gray-900 dark:text-white font-bold capitalize">
-                    {pendingStock.actionType.replace("_", " ")}
-                  </span>
+              {isEditingStock && editedStock ? (
+                /* Edit Form */
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                      Item Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editedStock.itemName}
+                      onChange={(e) =>
+                        updateEditedStockField("itemName", e.target.value)
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Quantity
+                      </label>
+                      <input
+                        type="number"
+                        value={editedStock.quantity}
+                        onChange={(e) =>
+                          updateEditedStockField(
+                            "quantity",
+                            parseFloat(e.target.value) || 0,
+                          )
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Unit
+                      </label>
+                      <input
+                        type="text"
+                        value={editedStock.unit}
+                        onChange={(e) =>
+                          updateEditedStockField("unit", e.target.value)
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Buying Price
+                      </label>
+                      <input
+                        type="number"
+                        value={editedStock.buyingPricePerUnit}
+                        onChange={(e) =>
+                          updateEditedStockField(
+                            "buyingPricePerUnit",
+                            parseFloat(e.target.value) || 0,
+                          )
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Selling Price
+                      </label>
+                      <input
+                        type="number"
+                        value={editedStock.sellingPrice}
+                        onChange={(e) =>
+                          updateEditedStockField(
+                            "sellingPrice",
+                            parseFloat(e.target.value) || 0,
+                          )
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {editedStock.supplierName !== undefined && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Supplier Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editedStock.supplierName || ""}
+                        onChange={(e) =>
+                          updateEditedStockField("supplierName", e.target.value)
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                    Item:
-                  </span>
-                  <span className="text-gray-900 dark:text-white font-bold">
-                    {pendingStock.itemName}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                    Quantity:
-                  </span>
-                  <span className="text-gray-900 dark:text-white font-bold">
-                    {pendingStock.quantity} {pendingStock.unit}
-                  </span>
-                </div>
-                {pendingStock.supplierName && (
+              ) : (
+                /* Display Mode */
+                <div className="bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
-                      Supplier:
+                      Action:
                     </span>
-                    <span className="text-gray-900 dark:text-white font-bold">
-                      {pendingStock.supplierName}
+                    <span className="text-gray-900 dark:text-white font-bold capitalize">
+                      {pendingStock.actionType.replace("_", " ")}
                     </span>
                   </div>
-                )}
-              </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                      Item:
+                    </span>
+                    <span className="text-gray-900 dark:text-white font-bold">
+                      {pendingStock.itemName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                      Quantity:
+                    </span>
+                    <span className="text-gray-900 dark:text-white font-bold">
+                      {pendingStock.quantity} {pendingStock.unit}
+                    </span>
+                  </div>
+                  {pendingStock.buyingPricePerUnit > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                        Buying Price:
+                      </span>
+                      <span className="text-gray-900 dark:text-white font-bold">
+                        KES {pendingStock.buyingPricePerUnit.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  {pendingStock.sellingPrice > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                        Selling Price:
+                      </span>
+                      <span className="text-gray-900 dark:text-white font-bold">
+                        KES {pendingStock.sellingPrice.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  {pendingStock.supplierName && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 dark:text-slate-400 text-sm font-medium">
+                        Supplier:
+                      </span>
+                      <span className="text-gray-900 dark:text-white font-bold">
+                        {pendingStock.supplierName}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-3 pt-2">
-                <button
-                  onClick={handleCancelStock}
-                  className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
-                >
-                  No, Cancel
-                </button>
-                <button
-                  onClick={handleConfirmStock}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
-                >
-                  Yes, Save It
-                </button>
+                {isEditingStock ? (
+                  <>
+                    <button
+                      onClick={handleCancelStockEdit}
+                      className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveStockEdit}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
+                    >
+                      Save Changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleCancelStock}
+                      className="flex-1 px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-bold transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleEditStock}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={handleConfirmStock}
+                      disabled={isConfirming}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isConfirming ? "Saving..." : "Confirm"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

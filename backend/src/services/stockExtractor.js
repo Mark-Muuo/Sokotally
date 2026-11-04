@@ -34,7 +34,7 @@ export async function extractStockData(userMessage) {
  * Build stock extraction prompt for both English and Swahili
  */
 function buildStockExtractionPrompt() {
-  return `You are an intelligent stock/inventory extractor for a small business in Kenya. Extract inventory data from natural language in ANY language (English or Swahili).
+  return `You are an intelligent stock/inventory extractor for SokoTally, a small business app in Kenya. Extract inventory data from natural language in ANY language (English or Swahili).
 
 Return ONLY valid JSON - no explanations, no markdown.
 
@@ -57,7 +57,7 @@ RULES:
 3. "Update/Change/Badilisha" = update_stock
 4. "How much/What stock/Nina stock gani" = query_stock
 5. Common units: kg (kilos), pieces (vipande), bundles (vishada), bags (magunia)
-6. Prices can be "kwa" (per) or total: "50kg kwa 30 bob kila kilo" = per_unit, "50kg kwa 1500" = total
+6. PRICING: "at/for X each/per/kila" = per_unit, "for/kwa X" (no each/per/kila) = total
 7. Auto-suggest selling price with 20-30% markup if not specified
 
 EXAMPLES:
@@ -65,8 +65,14 @@ EXAMPLES:
 "I bought 30kg of tomatoes at 40 shillings per kg from John"
 → {"actionType":"add_stock","itemName":"tomatoes","quantity":30,"unit":"kg","buyingPrice":40,"priceType":"per_unit","sellingPrice":null,"supplierName":"John","reorderLevel":null,"notes":null,"confidence":0.95}
 
+"I bought 30kg of tomatoes for 1200 shillings"
+→ {"actionType":"add_stock","itemName":"tomatoes","quantity":30,"unit":"kg","buyingPrice":1200,"priceType":"total","sellingPrice":null,"supplierName":null,"reorderLevel":null,"notes":null,"confidence":0.95}
+
 "Nimepata karoti 50kg kwa 2000 bob"
 → {"actionType":"add_stock","itemName":"carrots","quantity":50,"unit":"kg","buyingPrice":2000,"priceType":"total","sellingPrice":null,"supplierName":null,"reorderLevel":null,"notes":null,"confidence":0.9}
+
+"Nimepata karoti 50kg kwa 40 bob kila kilo"
+→ {"actionType":"add_stock","itemName":"carrots","quantity":50,"unit":"kg","buyingPrice":40,"priceType":"per_unit","sellingPrice":null,"supplierName":null,"reorderLevel":null,"notes":null,"confidence":0.95}
 
 "Add 100 pieces of cabbage, bought at 10 per piece, sell at 15"
 → {"actionType":"add_stock","itemName":"cabbage","quantity":100,"unit":"pieces","buyingPrice":10,"priceType":"per_unit","sellingPrice":15,"supplierName":null,"reorderLevel":null,"notes":null,"confidence":0.95}
@@ -134,7 +140,11 @@ function fallbackStockExtraction(message) {
 
   // Detect action type
   let actionType = null;
-  if (/bought|received|add|restock|nunua|nimepata|pata/i.test(lowerMsg)) {
+  if (
+    /bought|received|add|restock|nunua|nimenunua|nilinunua|numenua|nimepata|pata/i.test(
+      lowerMsg,
+    )
+  ) {
     actionType = "add_stock";
   } else if (/remove|spoiled|lost|ondoa|imeharibika|haribika/i.test(lowerMsg)) {
     actionType = "remove_stock";
@@ -202,7 +212,8 @@ export async function classifyMessage(message) {
 
   // Stock indicators
   const stockIndicators = [
-    /bought.*?(\d+\s*(?:kg|kilo|pieces|bundles|bags))/i,
+    /bought.*?(\d+\s*(?:kg|kilo|pieces|bundles|bags|vipande))/i,
+    /bought\s+\d+/i,
     /received.*?stock/i,
     /add.*?(?:to\s+)?stock/i,
     /restock/i,
@@ -210,6 +221,12 @@ export async function classifyMessage(message) {
     /spoiled/i,
     /imeharibika/i,
     /nimepata.*?(?:kg|kilo|pieces|bundles)/i,
+    /nimepata\s+\d+/i,
+    /nimenunua\s+/i,
+    /nilinunua\s+/i,
+    /numenua\s+/i,
+    /nunua\s+/i,
+    /ni[lm]e?nunua/i,
     /stock\s+(?:ya|of)/i,
   ];
 
@@ -217,12 +234,26 @@ export async function classifyMessage(message) {
   const transactionIndicators = [
     /sold/i,
     /nimeuza/i,
+    /niliuza/i,
+    /uza\b/i,
+    /mauzo/i,
     /sale/i,
     /paid/i,
+    /lipa/i,
+    /nililipia/i,
+    /nimelipa/i,
     /expense/i,
-    /debt/i,
-    /loan/i,
+    /matumizi/i,
     /gharama/i,
+    /debt/i,
+    /deni/i,
+    /loan/i,
+    /mkopo/i,
+    /anadai/i,
+    /nadai/i,
+    /wadeni/i,
+    /spent/i,
+    /owe/i,
   ];
 
   // Query indicators
